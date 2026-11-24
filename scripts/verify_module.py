@@ -28,6 +28,13 @@ REQUIRED_SYSTEM_PROPS = {
     "ro.lmk.thrashing_limit": "60",
     "ro.lmk.swap_free_low_percentage": "20",
     "ro.lmk.swap_util_max": "85",
+    "mmd.zram.enabled": "true",
+    "mmd.zram.size": "4294967296",
+    "mmd.zram.comp_algorithm": "zstd",
+    "ro.surface_flinger.clear_slots_with_set_layer_buffer": "true",
+    "ro.surface_flinger.use_context_priority": "true",
+    "ro.surface_flinger.force_hwc_copy_for_virtual_displays": "true",
+    "ro.surface_flinger.running_without_sync_framework": "false",
 }
 
 
@@ -77,8 +84,8 @@ def check_module_prop() -> str:
     missing = REQUIRED_PROP_KEYS - set(props)
     assert not missing, f"Missing module.prop keys: {missing}"
     assert props["id"] == "caventus_oriole_ram"
-    assert props["version"] == "v1.1.0"
-    assert props["versionCode"] == "110"
+    assert props["version"] == "v1.2.0"
+    assert props["versionCode"] == "120"
     print(f"PASS: module.prop ({props['id']} {props['version']})")
     return props["version"]
 
@@ -109,38 +116,73 @@ set -eu
 export CAVENTUS_SOURCE_ONLY=1
 . "{ctl}"
 
-# 1. pick_zram_algo
+# 1. pick_zram_algo, extract_bracketed_token & token_in_list
 [ "$(pick_zram_algo "zstd" "zstd lz4 lzo-rle lzo [lz77eh]")" = "zstd" ]
 [ "$(pick_zram_algo "zstd" "lz4 lzo-rle [lzo]")" = "lz4" ]
 if pick_zram_algo "zstd" "unknown_algo" >/dev/null 2>&1; then exit 1; fi
+[ "$(extract_bracketed_token "coarse_demand [adaptive] always_on")" = "adaptive" ]
+[ "$(extract_bracketed_token "[mq-deadline] kyber bfq none")" = "mq-deadline" ]
+token_in_list "kyber" "[mq-deadline] kyber bfq none"
+token_in_list "mq-deadline" "[mq-deadline] kyber bfq none"
+if token_in_list "noop" "[mq-deadline] kyber bfq none" >/dev/null 2>&1; then exit 1; fi
 
 # 2. can_safely_swapoff
 can_safely_swapoff 307200 3072000 80
 if can_safely_swapoff 2764800 1254016 80; then exit 1; fi
 
-# 3. validate_config_kv whitelist & injection guard
+# 3. validate_config_kv whitelist & injection guard (including v1.2.0 GS101 keys)
 validate_config_kv ZRAM_SIZE_MB 4096
 validate_config_kv ZRAM_ALGO zstd
+validate_config_kv MMD_ZRAM_SYNC 1
+validate_config_kv THP_MODE madvise
+validate_config_kv SCHED_PROFILE ptune
+validate_config_kv CPU_RATE_PROFILE responsive
+validate_config_kv IO_SCHEDULER kyber
+validate_config_kv IO_READ_AHEAD_KB 0
+validate_config_kv IO_NR_REQUESTS 512
+validate_config_kv GPU_POWER_POLICY adaptive
+validate_config_kv GPU_DVFS_PERIOD_MS 20
+validate_config_kv SF_TUNING_MODE ptune
+validate_config_kv WATCHDOG_ENABLED 1
 validate_config_kv ART_DEX2OAT_FILTER speed-profile
 validate_config_kv ACTION_MODE both
 if validate_config_kv ZRAM_SIZE_MB "4096; id" >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv ZRAM_SIZE_MB 99999 >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv ZRAM_ALGO badalgo >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv SCHED_PROFILE invalid >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv IO_READ_AHEAD_KB 2048 >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv IO_NR_REQUESTS 16 >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv GPU_DVFS_PERIOD_MS 5 >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv SF_TUNING_MODE "ptune; rm" >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv UNKNOWN_KEY 1 >/dev/null 2>&1; then exit 1; fi
 
-# 4. Sandbox save-config + sync_system_prop
+# 4. Sandbox save-config + sync_system_prop (ptune, off, mmd_sync)
 export CAVENTUS_SOURCE_ONLY=0
 export CAVENTUS_MODDIR="{sb}/mod"
 export CAVENTUS_CONFIG_ENV="{sb}/config.env"
 export CAVENTUS_LOG_FILE="{sb}/caventus.log"
 export CAVENTUS_LOCK_FILE="{sb}/recompile.lock"
+export CAVENTUS_WATCHDOG_PID_FILE="{sb}/watchdog.pid"
+export CAVENTUS_NO_WATCHDOG=1
 
-sh "{ctl}" save-config ZRAM_SIZE_MB=5120 ART_DEX2OAT_FILTER=speed LMKD_PSI_PARTIAL_MS=40 >/dev/null
+sh "{ctl}" save-config ZRAM_SIZE_MB=5120 ART_DEX2OAT_FILTER=speed LMKD_PSI_PARTIAL_MS=40 SCHED_PROFILE=ptune SF_TUNING_MODE=ptune IO_READ_AHEAD_KB=0 >/dev/null
 grep -q '^ZRAM_SIZE_MB=5120$' "{sb}/config.env"
+grep -q '^SCHED_PROFILE=ptune$' "{sb}/config.env"
 grep -q '^dalvik.vm.dex2oat-filter=speed$' "{sb}/mod/system.prop"
 grep -q '^ro.lmk.psi_partial_stall_ms=40$' "{sb}/mod/system.prop"
+grep -q '^mmd.zram.size=5368709120$' "{sb}/mod/system.prop"
+grep -q '^ro.surface_flinger.max_frame_buffer_acquired_buffers=6$' "{sb}/mod/system.prop"
+grep -q '^ro.surface_flinger.game_default_frame_rate_override=90$' "{sb}/mod/system.prop"
 
-# 5. status-json emits valid JSON
+sh "{ctl}" save-config SF_TUNING_MODE=off MMD_ZRAM_SYNC=0 >/dev/null
+if grep -q '^ro\\.surface_flinger\\.' "{sb}/mod/system.prop"; then exit 1; fi
+if grep -q '^mmd\\.zram\\.' "{sb}/mod/system.prop"; then exit 1; fi
+
+sh "{ctl}" save-config SF_TUNING_MODE=ram_safe MMD_ZRAM_SYNC=1 >/dev/null
+grep -q '^ro.surface_flinger.clear_slots_with_set_layer_buffer=true$' "{sb}/mod/system.prop"
+grep -q '^mmd.zram.enabled=true$' "{sb}/mod/system.prop"
+
+# 5. status-json emits valid JSON with all v1.2.0 sections
 sh "{ctl}" status-json > "{sb}/status.json"
 """
         res = subprocess.run(["sh", "-c", test_script], capture_output=True, text=True)
@@ -148,10 +190,14 @@ sh "{ctl}" status-json > "{sb}/status.json"
             raise AssertionError(f"Shell unit tests failed:\nSTDOUT:{res.stdout}\nSTDERR:{res.stderr}")
 
         status_data = json.loads((sb / "status.json").read_text(encoding="utf-8"))
-        for key in ("device", "ram", "zram", "vm", "lmkd", "art", "config"):
+        for key in ("device", "ram", "zram", "vm", "thp", "sched", "cpufreq", "io", "gpu", "sf", "lmkd", "art", "watchdog_running", "config"):
             assert key in status_data, f"Missing key {key} in status-json"
         assert status_data["config"]["ZRAM_SIZE_MB"] == 5120
         assert status_data["config"]["ART_DEX2OAT_FILTER"] == "speed"
+        assert status_data["config"]["SCHED_PROFILE"] == "ptune"
+        assert status_data["config"]["IO_READ_AHEAD_KB"] == 0
+        assert status_data["config"]["SF_TUNING_MODE"] == "ram_safe"
+        assert status_data["config"]["MMD_ZRAM_SYNC"] == 1
 
     print("PASS: shell unit tests (zram, swapoff guard, config validator, sync_system_prop, status-json)")
 

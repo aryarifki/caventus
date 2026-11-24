@@ -1,6 +1,6 @@
 id=caventus_oriole_ram
 name=Caventus — Pixel 6 (oriole) RAM Optimizer
-version=v1.1.0
-versionCode=110
+version=v1.2.0
+versionCode=120
 author=aryarifki
-description=Pixel 6 (oriole/gs101) memory optimizer with Material 3 Expressive KSU WebUI: customizable 4 GB zstd zRAM, ART speed-profile recompile, PSI LMKD, and VM/MGLRU tuning.
+description=Pixel 6 (oriole/gs101) RAM & system optimizer with Material 3 Expressive KSU WebUI: zRAM + mmd boot sync, ART speed-profile, PSI LMKD, VM/MGLRU/THP, GS101 vendor_sched/sched_pixel, UFS I/O, Mali-G78 GPU, and SurfaceFlinger tuning.

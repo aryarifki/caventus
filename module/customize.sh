@@ -45,10 +45,11 @@ set_perm "$MODPATH/bin/caventus-ctl.sh" 0 0 0755
 [ -d "$MODPATH/webroot" ] && set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
 
 ui_print "----------------------------------------------"
-ui_print "- Installed cleanly (overlay-free, no /system)."
+ui_print "- Installed v1.2.0 cleanly (overlay-free)."
+ui_print "- GS101 tuning: zRAM+mmd, ART, PSI LMKD, VM/THP,"
+ui_print "  vendor_sched, sched_pixel, UFS I/O, Mali & SF."
 ui_print "- Open KernelSU Manager -> WebUI to customize"
-ui_print "  zRAM, LMKD, VM/MGLRU & run ART recompile."
-ui_print "- Or tap Action (Run) in KernelSU Manager to"
-ui_print "  run zRAM compact + ART speed-profile recompile."
+ui_print "  all profiles & run ART speed-profile recompile."
+ui_print "- Or tap Action (Run) in KernelSU Manager."
 ui_print "- Reboot to apply all boot-time optimizations."
 ui_print "=============================================="

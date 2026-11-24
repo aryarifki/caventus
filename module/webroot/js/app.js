@@ -11,6 +11,8 @@ const I18N = {
     tile_art: 'ART dex2oat Filter',
     tile_lmkd: 'LMKD PSI / Thrash',
     tile_vm: 'VM Swappiness / MGLRU',
+    tile_sched: 'GS101 Sched / CPU',
+    tile_iogpu: 'UFS I/O & Mali GPU',
     quick_actions: 'Aksi Cepat',
     quick_actions_desc: 'Jalankan langsung di perangkat tanpa menunggu reboot.',
     qa_compact_title: 'Compact zRAM + Reinit LMKD',
@@ -28,6 +30,8 @@ const I18N = {
     zram_size_sub: 'Pixel 6 (8 GB) optimal di 4096 MB – 5120 MB',
     zram_algo_label: 'Algoritma Kompresi',
     zram_algo_sub: 'zstd paling padat; lz4/lz77eh paling ringan CPU',
+    mmd_sync_title: 'Android 17 mmd zRAM Boot Sync',
+    mmd_sync_sub: 'Sinkronkan mmd.zram.size & comp_algorithm sejak early-boot',
     art_desc: 'Kontrol kompilasi aplikasi dan ukuran mmap odex/vdex.',
     art_filter_sub: 'speed-profile menghemat RAM mmap dibanding everything',
     art_madvise_sub: 'Batas prefetch mmap file bytecode (default stok 100 MB)',
@@ -35,6 +39,24 @@ const I18N = {
     vm_desc: 'Parameter sysctl memori kernel Linux 6.1 GS101.',
     swappiness_sub: 'Prioritas kompresi halaman anon ke zRAM',
     wm_sub: 'Headroom kswapd sebelum RAM benar-benar sesak',
+    thp_sub: 'never paling hemat RAM; madvise seimbang (defrag=defer+madvise)',
+    sched_title: 'GS101 Scheduler & CPU',
+    sched_desc: 'Tuning vendor_sched uclamp & governor sched_pixel tanpa membuka core background.',
+    sched_prof_label: 'Profil vendor_sched',
+    sched_prof_sub: 'balanced membuka sf/sys; ptune membuka semua grup uclamp',
+    cpu_rate_label: 'Respon sched_pixel CPUFreq',
+    cpu_rate_sub: 'Atur up/down_rate_limit_us & response_time_ms tiap cluster',
+    iogpu_title: 'UFS Storage I/O & Mali-G78 GPU',
+    iogpu_desc: 'Optimasi antrean blok UFS 3.1 (/sys/block/sd*) dan GPU Mali GS101.',
+    ra_sub: 'Turunkan dari 512 KB stok untuk menghemat page-cache RAM',
+    nr_sub: 'Kedalaman antrean I/O UFS 3.1 (default stok 128)',
+    sf_title: 'SurfaceFlinger & Grafis',
+    sf_desc: 'Manajemen slot buffer grafis & sinkronisasi HWC (efek penuh setelah reboot).',
+    sf_mode_label: 'Mode SurfaceFlinger',
+    sf_mode_sub: 'ram_safe aktifkan clear_slots; ptune tambah 6 FB buffers & ADPF 1KHz',
+    watchdog_title: 'Sysfs Drift Guard (Watchdog)',
+    watchdog_desc: 'Penjaga ringan (shell murni, cek tiap 300s) agar sysctl & GPU/IO tidak di-reset sistem.',
+    watchdog_toggle: 'Aktifkan Drift Guard (300s)',
     recomp_studio: 'ART Recompile Studio',
     recomp_studio_desc: "Paksa aplikasi yang terlanjur dikompilasi 'everything' agar beralih ke 'speed-profile' (-f) dengan progres live.",
     recomp_scope_title: 'Cakupan Paket',
@@ -76,6 +98,8 @@ const I18N = {
     tile_art: 'ART dex2oat Filter',
     tile_lmkd: 'LMKD PSI / Thrash',
     tile_vm: 'VM Swappiness / MGLRU',
+    tile_sched: 'GS101 Sched / CPU',
+    tile_iogpu: 'UFS I/O & Mali GPU',
     quick_actions: 'Quick Actions',
     quick_actions_desc: 'Run directly on the device without rebooting.',
     qa_compact_title: 'Compact zRAM + Reinit LMKD',
@@ -93,6 +117,8 @@ const I18N = {
     zram_size_sub: 'Pixel 6 (8 GB) sweet spot is 4096 MB – 5120 MB',
     zram_algo_label: 'Compression Algorithm',
     zram_algo_sub: 'zstd gives highest density; lz4/lz77eh uses least CPU',
+    mmd_sync_title: 'Android 17 mmd zRAM Boot Sync',
+    mmd_sync_sub: 'Sync mmd.zram.size & comp_algorithm during early boot',
     art_desc: 'Control app compilation filter and odex/vdex mmap limit.',
     art_filter_sub: 'speed-profile saves RAM mmap compared to everything',
     art_madvise_sub: 'Bytecode mmap prefetch limit (stock default 100 MB)',
@@ -100,6 +126,24 @@ const I18N = {
     vm_desc: 'Linux 6.1 GS101 kernel memory sysctl parameters.',
     swappiness_sub: 'Tendency to compress anonymous pages into zRAM',
     wm_sub: 'kswapd headroom before memory pressure stalls UI',
+    thp_sub: 'never saves most RAM; madvise is balanced (defrag=defer+madvise)',
+    sched_title: 'GS101 Scheduler & CPU',
+    sched_desc: 'Tune vendor_sched uclamp & sched_pixel without unlocking background cores.',
+    sched_prof_label: 'vendor_sched Profile',
+    sched_prof_sub: 'balanced unlocks sf/sys; ptune unlocks all uclamp groups',
+    cpu_rate_label: 'sched_pixel CPUFreq Response',
+    cpu_rate_sub: 'Configure up/down_rate_limit_us & response_time_ms per cluster',
+    iogpu_title: 'UFS Storage I/O & Mali-G78 GPU',
+    iogpu_desc: 'Optimize UFS 3.1 block queues (/sys/block/sd*) & GS101 Mali GPU.',
+    ra_sub: 'Lower from 512 KB stock to reduce page-cache RAM overhead',
+    nr_sub: 'UFS 3.1 I/O queue depth (stock default 128)',
+    sf_title: 'SurfaceFlinger & Display Graphics',
+    sf_desc: 'Graphics buffer slot cleanup & HWC sync (full effect after reboot).',
+    sf_mode_label: 'SurfaceFlinger Mode',
+    sf_mode_sub: 'ram_safe enables clear_slots; ptune adds 6 FB buffers & 1KHz ADPF',
+    watchdog_title: 'Sysfs Drift Guard (Watchdog)',
+    watchdog_desc: 'Lightweight pure-shell guard (300s interval) to prevent sysctl/GPU/IO reset.',
+    watchdog_toggle: 'Enable Drift Guard (300s)',
     recomp_studio: 'ART Recompile Studio',
     recomp_studio_desc: "Force apps previously compiled with 'everything' down to 'speed-profile' (-f) with live progress.",
     recomp_scope_title: 'Package Scope',
@@ -232,7 +276,22 @@ function renderTelemetry(data) {
   $('tile-swaplow').textContent = `swap_low: ${data.lmkd.swap_free_low_pct}%`;
 
   $('tile-vm').textContent = `swap ${data.vm.swappiness} · wm ${data.vm.watermark_scale_factor}`;
-  $('tile-mglru').textContent = `mglru: ${data.vm.mglru_enabled}`;
+  $('tile-mglru').textContent = `mglru: ${data.vm.mglru_enabled} · thp: ${data.thp?.enabled || 'never'}`;
+
+  if ($('tile-sched')) {
+    $('tile-sched').textContent = `${data.sched?.profile || 'balanced'} · ${data.cpufreq?.profile || 'responsive'}`;
+    $('tile-cpu-resp').textContent = `p0_resp: ${data.cpufreq?.p0_resp_ms || '—'}ms · ramp: ${data.sched?.adpf_rampup || '—'}`;
+  }
+  if ($('tile-io')) {
+    $('tile-io').textContent = `${data.io?.scheduler || 'mq-deadline'} · ${data.io?.read_ahead_kb || '128'}KB`;
+    $('tile-gpu').textContent = `mali: ${data.gpu?.power_policy || 'adaptive'} · ${data.gpu?.dvfs_period_ms || '20'}ms`;
+  }
+  if ($('watchdog-badge')) {
+    const wdRun = Boolean(data.watchdog_running);
+    $('watchdog-badge').textContent = currentLang === 'id'
+      ? `Status: ${wdRun ? 'berjalan (interval 300s)' : 'berhenti'}`
+      : `Status: ${wdRun ? 'running (300s interval)' : 'stopped'}`;
+  }
 
   savedConfig = { ...data.config };
   draftConfig = { ...data.config };
@@ -256,6 +315,9 @@ function syncControlsFromDraft() {
     ['VM_SWAPPINESS', v => `${v}`],
     ['VM_WATERMARK_SCALE_FACTOR', v => `${v}`],
     ['VM_VFS_CACHE_PRESSURE', v => `${v}`],
+    ['IO_READ_AHEAD_KB', v => `${v} KB`],
+    ['IO_NR_REQUESTS', v => `${v}`],
+    ['GPU_DVFS_PERIOD_MS', v => `${v} ms`],
   ];
   sliders.forEach(([key, fmt]) => {
     const input = $(`cfg-${key}`);
@@ -266,14 +328,26 @@ function syncControlsFromDraft() {
     }
   });
 
+  if ($('cfg-MMD_ZRAM_SYNC')) {
+    $('cfg-MMD_ZRAM_SYNC').checked = Number(draftConfig.MMD_ZRAM_SYNC) === 1;
+  }
   if ($('cfg-LMKD_USE_PSI')) {
     $('cfg-LMKD_USE_PSI').checked = String(draftConfig.LMKD_USE_PSI) === 'true';
   }
   if ($('cfg-MGLRU_ENABLED')) {
     $('cfg-MGLRU_ENABLED').checked = Number(draftConfig.MGLRU_ENABLED) === 1;
   }
+  if ($('cfg-WATCHDOG_ENABLED')) {
+    $('cfg-WATCHDOG_ENABLED').checked = Number(draftConfig.WATCHDOG_ENABLED) === 1;
+  }
 
   setChipSelection('chips-ZRAM_ALGO', draftConfig.ZRAM_ALGO);
+  setChipSelection('chips-THP_MODE', draftConfig.THP_MODE);
+  setChipSelection('chips-SCHED_PROFILE', draftConfig.SCHED_PROFILE);
+  setChipSelection('chips-CPU_RATE_PROFILE', draftConfig.CPU_RATE_PROFILE);
+  setChipSelection('chips-IO_SCHEDULER', draftConfig.IO_SCHEDULER);
+  setChipSelection('chips-GPU_POWER_POLICY', draftConfig.GPU_POWER_POLICY);
+  setChipSelection('chips-SF_TUNING_MODE', draftConfig.SF_TUNING_MODE);
   setChipSelection('chips-ART_DEX2OAT_FILTER', draftConfig.ART_DEX2OAT_FILTER);
   setChipSelection('chips-RECOMPILE_SCOPE', draftConfig.RECOMPILE_SCOPE);
   setChipSelection('chips-ACTION_MODE', draftConfig.ACTION_MODE);
@@ -328,6 +402,9 @@ async function saveAndApplyConfig() {
   const zramChanged =
     String(draftConfig.ZRAM_SIZE_MB) !== String(savedConfig.ZRAM_SIZE_MB) ||
     String(draftConfig.ZRAM_ALGO) !== String(savedConfig.ZRAM_ALGO);
+  const bootPropChanged =
+    String(draftConfig.SF_TUNING_MODE) !== String(savedConfig.SF_TUNING_MODE) ||
+    String(draftConfig.MMD_ZRAM_SYNC) !== String(savedConfig.MMD_ZRAM_SYNC);
 
   await refreshTelemetry();
   if (zramChanged && (applyRes.stdout || '').includes('DEFERRED')) {
@@ -335,6 +412,12 @@ async function saveAndApplyConfig() {
       currentLang === 'id'
         ? 'Disimpan! Reboot diperlukan untuk resize zRAM secara aman.'
         : 'Saved! Reboot required to resize zRAM safely.'
+    );
+  } else if (bootPropChanged) {
+    showSnackbar(
+      currentLang === 'id'
+        ? 'Disimpan & diterapkan! Reboot disarankan untuk efek penuh SurfaceFlinger/mmd.'
+        : 'Saved & applied! Reboot recommended for full SurfaceFlinger/mmd effect.'
     );
   } else {
     showSnackbar(currentLang === 'id' ? 'Pengaturan disimpan & diterapkan' : 'Settings saved & applied');
@@ -455,6 +538,9 @@ function wireControls() {
     VM_SWAPPINESS: v => `${v}`,
     VM_WATERMARK_SCALE_FACTOR: v => `${v}`,
     VM_VFS_CACHE_PRESSURE: v => `${v}`,
+    IO_READ_AHEAD_KB: v => `${v} KB`,
+    IO_NR_REQUESTS: v => `${v}`,
+    GPU_DVFS_PERIOD_MS: v => `${v} ms`,
   };
   Object.entries(sliderFormats).forEach(([key, fmt]) => {
     const input = $(`cfg-${key}`);
@@ -467,6 +553,10 @@ function wireControls() {
   });
 
   // Switches
+  $('cfg-MMD_ZRAM_SYNC')?.addEventListener('change', e => {
+    draftConfig.MMD_ZRAM_SYNC = e.target.checked ? 1 : 0;
+    updateSaveDock();
+  });
   $('cfg-LMKD_USE_PSI')?.addEventListener('change', e => {
     draftConfig.LMKD_USE_PSI = e.target.checked ? 'true' : 'false';
     updateSaveDock();
@@ -475,9 +565,24 @@ function wireControls() {
     draftConfig.MGLRU_ENABLED = e.target.checked ? 1 : 0;
     updateSaveDock();
   });
+  $('cfg-WATCHDOG_ENABLED')?.addEventListener('change', e => {
+    draftConfig.WATCHDOG_ENABLED = e.target.checked ? 1 : 0;
+    updateSaveDock();
+  });
 
   // Chip groups bound to config keys
-  ['ZRAM_ALGO', 'ART_DEX2OAT_FILTER', 'RECOMPILE_SCOPE', 'ACTION_MODE'].forEach(key => {
+  [
+    'ZRAM_ALGO',
+    'THP_MODE',
+    'SCHED_PROFILE',
+    'CPU_RATE_PROFILE',
+    'IO_SCHEDULER',
+    'GPU_POWER_POLICY',
+    'SF_TUNING_MODE',
+    'ART_DEX2OAT_FILTER',
+    'RECOMPILE_SCOPE',
+    'ACTION_MODE',
+  ].forEach(key => {
     document.querySelectorAll(`#chips-${key} .m3-chip`).forEach(btn => {
       btn.addEventListener('click', () => {
         draftConfig[key] = btn.dataset.val;

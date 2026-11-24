@@ -10,10 +10,12 @@ fi
 CONFIG_ENV="${CAVENTUS_CONFIG_ENV:-/data/adb/caventus/config.env}"
 LOG_FILE="${CAVENTUS_LOG_FILE:-/data/adb/caventus/caventus.log}"
 LOCK_FILE="${CAVENTUS_LOCK_FILE:-/data/adb/caventus/recompile.lock}"
+WATCHDOG_PID_FILE="${CAVENTUS_WATCHDOG_PID_FILE:-/data/adb/caventus/watchdog.pid}"
 
 set_defaults() {
   ZRAM_SIZE_MB=4096
   ZRAM_ALGO=zstd
+  MMD_ZRAM_SYNC=1
   SWAPOFF_HEADROOM_PCT=80
   VM_SWAPPINESS=80
   VM_VFS_CACHE_PRESSURE=100
@@ -24,6 +26,16 @@ set_defaults() {
   VM_STAT_INTERVAL=10
   MGLRU_ENABLED=1
   MGLRU_MIN_TTL_MS=1000
+  THP_MODE=never
+  SCHED_PROFILE=balanced
+  CPU_RATE_PROFILE=responsive
+  IO_SCHEDULER=mq-deadline
+  IO_READ_AHEAD_KB=128
+  IO_NR_REQUESTS=256
+  GPU_POWER_POLICY=adaptive
+  GPU_DVFS_PERIOD_MS=20
+  SF_TUNING_MODE=ram_safe
+  WATCHDOG_ENABLED=0
   ART_DEX2OAT_FILTER=speed-profile
   ART_MADVISE_MB=32
   LMKD_USE_PSI=true
@@ -59,6 +71,7 @@ validate_config_kv() {
   case "$_k" in
     ZRAM_SIZE_MB)              in_range "$_v" 512 8192 ;;
     ZRAM_ALGO)                 case "$_v" in zstd|lz4|lzo-rle|lzo|lz77eh) return 0 ;; *) return 1 ;; esac ;;
+    MMD_ZRAM_SYNC)             case "$_v" in 0|1) return 0 ;; *) return 1 ;; esac ;;
     SWAPOFF_HEADROOM_PCT)      in_range "$_v" 20 95 ;;
     VM_SWAPPINESS)             in_range "$_v" 1 200 ;;
     VM_VFS_CACHE_PRESSURE)     in_range "$_v" 10 500 ;;
@@ -69,6 +82,16 @@ validate_config_kv() {
     VM_STAT_INTERVAL)          in_range "$_v" 1 60 ;;
     MGLRU_ENABLED)             case "$_v" in 0|1) return 0 ;; *) return 1 ;; esac ;;
     MGLRU_MIN_TTL_MS)          in_range "$_v" 0 10000 ;;
+    THP_MODE)                  case "$_v" in never|madvise|always) return 0 ;; *) return 1 ;; esac ;;
+    SCHED_PROFILE)             case "$_v" in stock|balanced|ptune) return 0 ;; *) return 1 ;; esac ;;
+    CPU_RATE_PROFILE)          case "$_v" in stock|responsive|ptune) return 0 ;; *) return 1 ;; esac ;;
+    IO_SCHEDULER)              case "$_v" in mq-deadline|kyber|bfq|none) return 0 ;; *) return 1 ;; esac ;;
+    IO_READ_AHEAD_KB)          in_range "$_v" 0 1024 ;;
+    IO_NR_REQUESTS)            in_range "$_v" 64 512 ;;
+    GPU_POWER_POLICY)          case "$_v" in adaptive|coarse_demand|always_on) return 0 ;; *) return 1 ;; esac ;;
+    GPU_DVFS_PERIOD_MS)        in_range "$_v" 10 50 ;;
+    SF_TUNING_MODE)            case "$_v" in off|ram_safe|ptune) return 0 ;; *) return 1 ;; esac ;;
+    WATCHDOG_ENABLED)          case "$_v" in 0|1) return 0 ;; *) return 1 ;; esac ;;
     ART_DEX2OAT_FILTER)        case "$_v" in speed-profile|speed|quicken|verify|everything) return 0 ;; *) return 1 ;; esac ;;
     ART_MADVISE_MB)            in_range "$_v" 8 256 ;;
     LMKD_USE_PSI)              case "$_v" in true|false) return 0 ;; *) return 1 ;; esac ;;
@@ -112,6 +135,7 @@ write_config_file() {
 # Caventus Pixel 6 (oriole) configuration
 ZRAM_SIZE_MB=$ZRAM_SIZE_MB
 ZRAM_ALGO=$ZRAM_ALGO
+MMD_ZRAM_SYNC=$MMD_ZRAM_SYNC
 SWAPOFF_HEADROOM_PCT=$SWAPOFF_HEADROOM_PCT
 VM_SWAPPINESS=$VM_SWAPPINESS
 VM_VFS_CACHE_PRESSURE=$VM_VFS_CACHE_PRESSURE
@@ -122,6 +146,16 @@ VM_PAGE_CLUSTER=$VM_PAGE_CLUSTER
 VM_STAT_INTERVAL=$VM_STAT_INTERVAL
 MGLRU_ENABLED=$MGLRU_ENABLED
 MGLRU_MIN_TTL_MS=$MGLRU_MIN_TTL_MS
+THP_MODE=$THP_MODE
+SCHED_PROFILE=$SCHED_PROFILE
+CPU_RATE_PROFILE=$CPU_RATE_PROFILE
+IO_SCHEDULER=$IO_SCHEDULER
+IO_READ_AHEAD_KB=$IO_READ_AHEAD_KB
+IO_NR_REQUESTS=$IO_NR_REQUESTS
+GPU_POWER_POLICY=$GPU_POWER_POLICY
+GPU_DVFS_PERIOD_MS=$GPU_DVFS_PERIOD_MS
+SF_TUNING_MODE=$SF_TUNING_MODE
+WATCHDOG_ENABLED=$WATCHDOG_ENABLED
 ART_DEX2OAT_FILTER=$ART_DEX2OAT_FILTER
 ART_MADVISE_MB=$ART_MADVISE_MB
 LMKD_USE_PSI=$LMKD_USE_PSI
@@ -142,6 +176,7 @@ EOF
 
 sync_system_prop() {
   _madvise_bytes=$((ART_MADVISE_MB * 1048576))
+  _zram_bytes=$((ZRAM_SIZE_MB * 1048576))
   _sp_path="$MODDIR/system.prop"
   _sp_tmp="${_sp_path}.tmp.$$"
   mkdir -p "$MODDIR" 2>/dev/null || true
@@ -172,6 +207,39 @@ ro.lmk.kill_timeout_ms=$LMKD_KILL_TIMEOUT_MS
 ro.lmk.downgrade_pressure=$LMKD_DOWNGRADE_PRESSURE
 ro.lmk.debug=false
 EOF
+
+  if [ "$MMD_ZRAM_SYNC" = "1" ]; then
+    cat <<EOF >> "$_sp_tmp"
+
+# 3. Android 16/17 mmd zRAM boot sync
+mmd.zram.enabled=true
+mmd.zram.size=$_zram_bytes
+mmd.zram.comp_algorithm=$ZRAM_ALGO
+EOF
+  fi
+
+  case "$SF_TUNING_MODE" in
+    ram_safe|ptune)
+      cat <<EOF >> "$_sp_tmp"
+
+# 4. SurfaceFlinger — Graphics RAM & latency ($SF_TUNING_MODE)
+ro.surface_flinger.clear_slots_with_set_layer_buffer=true
+ro.surface_flinger.use_context_priority=true
+ro.surface_flinger.force_hwc_copy_for_virtual_displays=true
+ro.surface_flinger.running_without_sync_framework=false
+EOF
+      ;;
+  esac
+
+  if [ "$SF_TUNING_MODE" = "ptune" ]; then
+    cat <<EOF >> "$_sp_tmp"
+ro.surface_flinger.max_frame_buffer_acquired_buffers=6
+ro.surface_flinger.game_default_frame_rate_override=90
+debug.graphics.game_default_frame_rate.disabled=true
+vendor.powerhal.adpf.rate=1000000
+EOF
+  fi
+
   mv -f "$_sp_tmp" "$_sp_path"
 }
 
@@ -260,7 +328,7 @@ can_safely_swapoff() {
   [ "$_lhs" -lt "$_rhs" ]
 }
 
-extract_active_algo() {
+extract_bracketed_token() {
   _avail="$1"
   for _tok in $_avail; do
     case "$_tok" in
@@ -269,6 +337,22 @@ extract_active_algo() {
         return 0
         ;;
     esac
+  done
+  return 1
+}
+
+extract_active_algo() {
+  extract_bracketed_token "$1"
+}
+
+token_in_list() {
+  _target="$1"
+  _list="$2"
+  for _tok in $_list; do
+    _clean=$(printf '%s' "$_tok" | tr -d '[]')
+    if [ "$_clean" = "$_target" ]; then
+      return 0
+    fi
   done
   return 1
 }
@@ -286,6 +370,7 @@ apply_live_props() {
   _rp=$(resolve_resetprop 2>/dev/null || true)
   [ -z "$_rp" ] && return 0
   _madvise_bytes=$((ART_MADVISE_MB * 1048576))
+  _zram_bytes=$((ZRAM_SIZE_MB * 1048576))
   "$_rp" -n dalvik.vm.dex2oat-filter "$ART_DEX2OAT_FILTER" 2>/dev/null || true
   "$_rp" -n dalvik.vm.image-dex2oat-filter "$ART_DEX2OAT_FILTER" 2>/dev/null || true
   "$_rp" -n pm.dexopt.install "$ART_DEX2OAT_FILTER" 2>/dev/null || true
@@ -303,6 +388,27 @@ apply_live_props() {
   "$_rp" -n ro.lmk.kill_heaviest_task "$LMKD_KILL_HEAVIEST" 2>/dev/null || true
   "$_rp" -n ro.lmk.kill_timeout_ms "$LMKD_KILL_TIMEOUT_MS" 2>/dev/null || true
   "$_rp" -n ro.lmk.downgrade_pressure "$LMKD_DOWNGRADE_PRESSURE" 2>/dev/null || true
+
+  if [ "$MMD_ZRAM_SYNC" = "1" ]; then
+    "$_rp" -n mmd.zram.enabled "true" 2>/dev/null || true
+    "$_rp" -n mmd.zram.size "$_zram_bytes" 2>/dev/null || true
+    "$_rp" -n mmd.zram.comp_algorithm "$ZRAM_ALGO" 2>/dev/null || true
+  fi
+
+  case "$SF_TUNING_MODE" in
+    ram_safe|ptune)
+      "$_rp" -n ro.surface_flinger.clear_slots_with_set_layer_buffer "true" 2>/dev/null || true
+      "$_rp" -n ro.surface_flinger.use_context_priority "true" 2>/dev/null || true
+      "$_rp" -n ro.surface_flinger.force_hwc_copy_for_virtual_displays "true" 2>/dev/null || true
+      "$_rp" -n ro.surface_flinger.running_without_sync_framework "false" 2>/dev/null || true
+      ;;
+  esac
+  if [ "$SF_TUNING_MODE" = "ptune" ]; then
+    "$_rp" -n ro.surface_flinger.max_frame_buffer_acquired_buffers "6" 2>/dev/null || true
+    "$_rp" -n ro.surface_flinger.game_default_frame_rate_override "90" 2>/dev/null || true
+    "$_rp" -n debug.graphics.game_default_frame_rate.disabled "true" 2>/dev/null || true
+    "$_rp" -n vendor.powerhal.adpf.rate "1000000" 2>/dev/null || true
+  fi
 }
 
 apply_zram() {
@@ -420,6 +526,242 @@ apply_vm() {
   log_msg "VM sysctls applied (swappiness=$VM_SWAPPINESS, watermark_scale=$VM_WATERMARK_SCALE_FACTOR, dirty=${VM_DIRTY_BACKGROUND_RATIO}/${VM_DIRTY_RATIO}, mglru=$MGLRU_ENABLED)."
 }
 
+apply_thp() {
+  _thp_dir="/sys/kernel/mm/transparent_hugepage"
+  [ -d "$_thp_dir" ] || return 0
+  case "$THP_MODE" in
+    always)
+      write_node "$_thp_dir/shmem_enabled" "within_size" || true
+      write_node "$_thp_dir/defrag" "defer+madvise" || true
+      write_node "$_thp_dir/enabled" "always" || true
+      ;;
+    madvise)
+      write_node "$_thp_dir/shmem_enabled" "advise" || true
+      write_node "$_thp_dir/defrag" "defer+madvise" || true
+      write_node "$_thp_dir/enabled" "madvise" || true
+      ;;
+    never|*)
+      write_node "$_thp_dir/shmem_enabled" "never" || true
+      write_node "$_thp_dir/defrag" "madvise" || true
+      write_node "$_thp_dir/enabled" "never" || true
+      ;;
+  esac
+  [ "${CAVENTUS_QUIET:-0}" = "1" ] || log_msg "THP applied (mode=$THP_MODE)."
+}
+
+set_sched_group() {
+  _gdir="$1"
+  _umin="$2"
+  _umax="$3"
+  _pidle="$4"
+  _phcap="${5:-0}"
+  _spread="${6:-0}"
+  [ -d "$_gdir" ] || return 0
+  write_node "$_gdir/uclamp_min" "$_umin" || true
+  write_node "$_gdir/uclamp_max" "$_umax" || true
+  write_node "$_gdir/prefer_idle" "$_pidle" || true
+  write_node "$_gdir/prefer_high_cap" "$_phcap" || true
+  write_node "$_gdir/task_spreading" "$_spread" || true
+}
+
+apply_sched() {
+  write_node /proc/sys/kernel/sched_child_runs_first "0" || true
+  _vs="/proc/vendor_sched"
+  if [ ! -d "$_vs" ]; then
+    return 0
+  fi
+
+  case "$SCHED_PROFILE" in
+    stock)
+      write_node "$_vs/latency_ns" "8000000" || true
+      write_node "$_vs/min_granularity_ns" "1000000" || true
+      write_node "$_vs/adpf_rampup_multiplier" "4" || true
+      write_node "$_vs/auto_prefer_idle" "0" || true
+      write_node "$_vs/reduce_prefer_idle" "1" || true
+      write_node "$_vs/uclamp_max_filter_enable" "1" || true
+      set_sched_group "$_vs/groups/ta" 1 1024 1 0 0
+      set_sched_group "$_vs/groups/fg" 0 1024 1 0 0
+      set_sched_group "$_vs/groups/cam" 1 1024 1 0 0
+      set_sched_group "$_vs/groups/sf" 0 1024 0 0 0
+      set_sched_group "$_vs/groups/sys" 0 1024 0 0 0
+      set_sched_group "$_vs/groups/bg" 0 512 0 0 0
+      set_sched_group "$_vs/groups/sys_bg" 0 512 0 0 0
+      set_sched_group "$_vs/groups/ota" 0 512 0 0 0
+      set_sched_group "$_vs/groups/dex2oat" 0 615 0 0 0
+      ;;
+    ptune)
+      write_node "$_vs/latency_ns" "4166666" || true
+      write_node "$_vs/min_granularity_ns" "4166666" || true
+      write_node "$_vs/adpf_rampup_multiplier" "1" || true
+      write_node "$_vs/auto_prefer_idle" "0" || true
+      write_node "$_vs/reduce_prefer_idle" "0" || true
+      write_node "$_vs/auto_dvfs_headroom_enable" "0" || true
+      write_node "$_vs/tapered_dvfs_headroom_enable" "0" || true
+      write_node "$_vs/uclamp_max_filter_enable" "0" || true
+      write_node "$_vs/dvfs_headroom" "1280" || true
+      write_node "$_vs/util_threshold" "9999" || true
+      for _g in "$_vs/groups"/*; do
+        [ -d "$_g" ] || continue
+        set_sched_group "$_g" 0 1024 1 0 0
+      done
+      ;;
+    balanced|*)
+      write_node "$_vs/latency_ns" "4166666" || true
+      write_node "$_vs/min_granularity_ns" "1000000" || true
+      write_node "$_vs/adpf_rampup_multiplier" "2" || true
+      write_node "$_vs/auto_prefer_idle" "0" || true
+      write_node "$_vs/reduce_prefer_idle" "0" || true
+      set_sched_group "$_vs/groups/ta" 1 1024 1 0 0
+      set_sched_group "$_vs/groups/fg" 0 1024 1 0 0
+      set_sched_group "$_vs/groups/sf" 0 1024 1 0 0
+      set_sched_group "$_vs/groups/sys" 0 1024 1 0 0
+      set_sched_group "$_vs/groups/bg" 0 512 0 0 0
+      set_sched_group "$_vs/groups/sys_bg" 0 512 0 0 0
+      set_sched_group "$_vs/groups/ota" 0 512 0 0 0
+      set_sched_group "$_vs/groups/dex2oat" 0 615 0 0 0
+      ;;
+  esac
+  [ "${CAVENTUS_QUIET:-0}" = "1" ] || log_msg "GS101 vendor_sched applied (profile=$SCHED_PROFILE)."
+}
+
+apply_cpufreq() {
+  _cbase="/sys/devices/system/cpu/cpufreq"
+  [ -d "$_cbase" ] || return 0
+  for _pol in "$_cbase"/policy*; do
+    _sp="$_pol/sched_pixel"
+    [ -d "$_sp" ] || continue
+    _pname=$(basename "$_pol")
+    case "$CPU_RATE_PROFILE" in
+      stock)
+        write_node "$_sp/up_rate_limit_us" "500" || true
+        case "$_pname" in
+          policy0)
+            write_node "$_sp/down_rate_limit_us" "5000" || true
+            write_node "$_sp/response_time_ms" "8" || true
+            ;;
+          policy4)
+            write_node "$_sp/down_rate_limit_us" "20000" || true
+            write_node "$_sp/response_time_ms" "29" || true
+            ;;
+          *)
+            write_node "$_sp/down_rate_limit_us" "20000" || true
+            write_node "$_sp/response_time_ms" "155" || true
+            ;;
+        esac
+        ;;
+      ptune)
+        write_node "$_sp/up_rate_limit_us" "0" || true
+        write_node "$_sp/down_rate_limit_us" "0" || true
+        write_node "$_sp/response_time_ms" "1" || true
+        write_node "$_sp/cpu_busy_limit_ms" "1" || true
+        ;;
+      responsive|*)
+        write_node "$_sp/up_rate_limit_us" "0" || true
+        write_node "$_sp/down_rate_limit_us" "2000" || true
+        write_node "$_sp/response_time_ms" "4" || true
+        ;;
+    esac
+  done
+  [ "${CAVENTUS_QUIET:-0}" = "1" ] || log_msg "sched_pixel CPUFreq applied (profile=$CPU_RATE_PROFILE)."
+}
+
+apply_io() {
+  for _blk in /sys/block/sd*; do
+    _q="$_blk/queue"
+    [ -d "$_q" ] || continue
+    if [ -r "$_q/scheduler" ]; then
+      _avail_io=$(cat "$_q/scheduler" 2>/dev/null || true)
+      if token_in_list "$IO_SCHEDULER" "$_avail_io"; then
+        write_node "$_q/scheduler" "$IO_SCHEDULER" || true
+      fi
+    fi
+    write_node "$_q/nr_requests" "$IO_NR_REQUESTS" || true
+    write_node "$_q/read_ahead_kb" "$IO_READ_AHEAD_KB" || true
+    write_node "$_q/iostats" "0" || true
+    write_node "$_q/iosched/async_depth" "$IO_NR_REQUESTS" || true
+  done
+  if [ -d /sys/block/zram0/queue ]; then
+    write_node /sys/block/zram0/queue/read_ahead_kb "0" || true
+    write_node /sys/block/zram0/queue/iostats "0" || true
+  fi
+  [ "${CAVENTUS_QUIET:-0}" = "1" ] || log_msg "Block I/O applied (sched=$IO_SCHEDULER, ra=${IO_READ_AHEAD_KB}KB, nr_req=$IO_NR_REQUESTS)."
+}
+
+apply_gpu() {
+  _mali="/sys/devices/platform/1c500000.mali"
+  [ -d "$_mali" ] || return 0
+  _gmin=$(cat "$_mali/min_freq" 2>/dev/null || echo 151000)
+  _gmax=$(cat "$_mali/max_freq" 2>/dev/null || echo 848000)
+  is_uint "$_gmin" || _gmin=151000
+  is_uint "$_gmax" || _gmax=848000
+
+  # Note: min_freq/max_freq are read-only on Pixel 6; unlock writable scaling/hint bounds only
+  write_node "$_mali/hint_min_freq" "$_gmin" || true
+  write_node "$_mali/scaling_min_freq" "$_gmin" || true
+  write_node "$_mali/scaling_min_compute_freq" "$_gmin" || true
+  write_node "$_mali/hint_max_freq" "$_gmax" || true
+  write_node "$_mali/scaling_max_freq" "$_gmax" || true
+  write_node "$_mali/dvfs_period" "$GPU_DVFS_PERIOD_MS" || true
+
+  if [ -r "$_mali/power_policy" ]; then
+    _avail_pp=$(cat "$_mali/power_policy" 2>/dev/null || true)
+    if token_in_list "$GPU_POWER_POLICY" "$_avail_pp"; then
+      write_node "$_mali/power_policy" "$GPU_POWER_POLICY" || true
+    fi
+  fi
+  [ "${CAVENTUS_QUIET:-0}" = "1" ] || log_msg "Mali GPU applied (policy=$GPU_POWER_POLICY, dvfs_period=${GPU_DVFS_PERIOD_MS}ms)."
+}
+
+watchdog_is_running() {
+  [ -f "$WATCHDOG_PID_FILE" ] || return 1
+  _wpid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || true)
+  is_uint "$_wpid" && kill -0 "$_wpid" 2>/dev/null
+}
+
+cmd_watchdog_stop() {
+  if [ -f "$WATCHDOG_PID_FILE" ]; then
+    _wpid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || true)
+    if is_uint "$_wpid" && kill -0 "$_wpid" 2>/dev/null; then
+      kill "$_wpid" 2>/dev/null || true
+    fi
+    rm -f "$WATCHDOG_PID_FILE"
+    log_msg "Sysfs drift guard stopped."
+  fi
+}
+
+cmd_watchdog_start() {
+  if watchdog_is_running; then
+    return 0
+  fi
+  _wdir=$(dirname "$WATCHDOG_PID_FILE")
+  mkdir -p "$_wdir" 2>/dev/null || true
+  if command -v nohup >/dev/null 2>&1; then
+    nohup "$0" watchdog-loop </dev/null >/dev/null 2>&1 &
+  else
+    "$0" watchdog-loop </dev/null >/dev/null 2>&1 &
+  fi
+  echo "$!" > "$WATCHDOG_PID_FILE"
+  log_msg "Sysfs drift guard started (PID $!, interval=300s)."
+}
+
+cmd_watchdog_loop() {
+  trap 'rm -f "$WATCHDOG_PID_FILE"; exit 0' INT TERM
+  while true; do
+    sleep 300
+    load_config
+    [ "$WATCHDOG_ENABLED" = "1" ] || break
+    CAVENTUS_QUIET=1
+    export CAVENTUS_QUIET
+    apply_vm
+    apply_thp
+    apply_sched
+    apply_cpufreq
+    apply_io
+    apply_gpu
+  done
+  rm -f "$WATCHDOG_PID_FILE"
+}
+
 apply_lmkd() {
   setprop lmkd.reinit 1 2>/dev/null || true
   if command -v lmkd >/dev/null 2>&1; then
@@ -463,7 +805,13 @@ cmd_reset_defaults() {
   sync_system_prop
   apply_live_props
   apply_vm
+  apply_thp
+  apply_sched
+  apply_cpufreq
+  apply_io
+  apply_gpu
   apply_lmkd
+  cmd_watchdog_stop
   log_msg "Configuration reset to Pixel 6 (oriole) defaults."
 }
 
@@ -480,16 +828,31 @@ cmd_status() {
   zram_bdev=$(cat /sys/block/zram0/backing_dev 2>/dev/null || echo "N/A")
   mglru_en=$(cat /sys/kernel/mm/lru_gen/enabled 2>/dev/null || echo "N/A")
   mglru_ttl=$(cat /sys/kernel/mm/lru_gen/min_ttl_ms 2>/dev/null || echo "N/A")
+  thp_en=$(extract_bracketed_token "$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true)" 2>/dev/null || echo "N/A")
+  vs_lat=$(cat /proc/vendor_sched/latency_ns 2>/dev/null || echo "N/A")
+  cpufreq_resp=$(cat /sys/devices/system/cpu/cpufreq/policy0/sched_pixel/response_time_ms 2>/dev/null || echo "N/A")
+  io_sched=$(extract_bracketed_token "$(cat /sys/block/sda/queue/scheduler 2>/dev/null || true)" 2>/dev/null || echo "N/A")
+  io_ra=$(cat /sys/block/sda/queue/read_ahead_kb 2>/dev/null || echo "N/A")
+  io_nr=$(cat /sys/block/sda/queue/nr_requests 2>/dev/null || echo "N/A")
+  gpu_pp=$(extract_bracketed_token "$(cat /sys/devices/platform/1c500000.mali/power_policy 2>/dev/null || true)" 2>/dev/null || echo "N/A")
+  gpu_dvfs=$(cat /sys/devices/platform/1c500000.mali/dvfs_period 2>/dev/null || echo "N/A")
+  wd_state="stopped"
+  watchdog_is_running && wd_state="running"
 
   echo "=== Caventus Status (oriole) ==="
   echo "RAM        : MemTotal=$(( ${mem_total:-0} / 1024 )) MB | MemAvailable=$(( ${mem_avail:-0} / 1024 )) MB"
   echo "Swap       : Used=$(( swap_used / 1024 )) MB / Total=$(( ${swap_total:-0} / 1024 )) MB"
-  echo "zRAM       : $(( zram_size / 1048576 )) MB | algo: $zram_algo | backing_dev: $zram_bdev"
+  echo "zRAM       : $(( zram_size / 1048576 )) MB | algo: $zram_algo | backing_dev: $zram_bdev | mmd_sync=$MMD_ZRAM_SYNC"
   echo "zRAM stat  : $zram_stat"
   echo "VM         : swappiness=$(cat /proc/sys/vm/swappiness 2>/dev/null) | wm_scale=$(cat /proc/sys/vm/watermark_scale_factor 2>/dev/null) | vfs_cache=$(cat /proc/sys/vm/vfs_cache_pressure 2>/dev/null) | page_cluster=$(cat /proc/sys/vm/page-cluster 2>/dev/null)"
-  echo "MGLRU      : enabled=$mglru_en | min_ttl_ms=$mglru_ttl"
+  echo "MGLRU/THP  : mglru=$mglru_en (ttl=${mglru_ttl}ms) | thp=$thp_en"
+  echo "GS101 Sched: profile=$SCHED_PROFILE (latency_ns=$vs_lat) | cpu_rate=$CPU_RATE_PROFILE (p0_resp=${cpufreq_resp}ms)"
+  echo "UFS I/O    : sched=$io_sched | read_ahead=${io_ra}KB | nr_requests=$io_nr"
+  echo "Mali GPU   : policy=$gpu_pp | dvfs_period=${gpu_dvfs}ms"
+  echo "SurfaceFlg : mode=$SF_TUNING_MODE | clear_slots=$(getprop ro.surface_flinger.clear_slots_with_set_layer_buffer 2>/dev/null)"
   echo "LMKD       : use_psi=$(getprop ro.lmk.use_psi 2>/dev/null) | partial_ms=$(getprop ro.lmk.psi_partial_stall_ms 2>/dev/null) | complete_ms=$(getprop ro.lmk.psi_complete_stall_ms 2>/dev/null) | thrashing=$(getprop ro.lmk.thrashing_limit 2>/dev/null) | swap_low=$(getprop ro.lmk.swap_free_low_percentage 2>/dev/null)%"
   echo "ART        : dex2oat-filter=$(getprop dalvik.vm.dex2oat-filter 2>/dev/null) | image-filter=$(getprop dalvik.vm.image-dex2oat-filter 2>/dev/null)"
+  echo "Watchdog   : enabled=$WATCHDOG_ENABLED | state=$wd_state"
 }
 
 cmd_status_json() {
@@ -500,15 +863,15 @@ cmd_status_json() {
   _kern=$(uname -r 2>/dev/null || echo "unknown")
   _up=$(uptime 2>/dev/null | sed 's/^ *//' || echo "unknown")
 
-  _mt=$(read_meminfo_kb MemTotal); _mt=${_mt:-0}
-  _mf=$(read_meminfo_kb MemFree); _mf=${_mf:-0}
-  _ma=$(read_meminfo_kb MemAvailable); _ma=${_ma:-0}
-  _ca=$(read_meminfo_kb Cached); _ca=${_ca:-0}
-  _st=$(read_meminfo_kb SwapTotal); _st=${_st:-0}
-  _sf=$(read_meminfo_kb SwapFree); _sf=${_sf:-0}
+  _mt=$(read_meminfo_kb MemTotal); is_uint "$_mt" || _mt=0
+  _mf=$(read_meminfo_kb MemFree); is_uint "$_mf" || _mf=0
+  _ma=$(read_meminfo_kb MemAvailable); is_uint "$_ma" || _ma=0
+  _ca=$(read_meminfo_kb Cached); is_uint "$_ca" || _ca=0
+  _st=$(read_meminfo_kb SwapTotal); is_uint "$_st" || _st=0
+  _sf=$(read_meminfo_kb SwapFree); is_uint "$_sf" || _sf=0
   _su=$((_st - _sf))
 
-  _zsize=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
+  _zsize=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0); is_uint "$_zsize" || _zsize=0
   _zalgos=$(cat /sys/block/zram0/comp_algorithm 2>/dev/null || echo "")
   _zactive=$(extract_active_algo "$_zalgos" 2>/dev/null || echo "unknown")
   _zbdev=$(cat /sys/block/zram0/backing_dev 2>/dev/null || echo "none")
@@ -517,6 +880,9 @@ cmd_status_json() {
     set -- $(cat /sys/block/zram0/mm_stat 2>/dev/null)
     _zorig=${1:-0}; _zcompr=${2:-0}; _zmem=${3:-0}
   fi
+  is_uint "$_zorig" || _zorig=0
+  is_uint "$_zcompr" || _zcompr=0
+  is_uint "$_zmem" || _zmem=0
 
   _v_swap=$(cat /proc/sys/vm/swappiness 2>/dev/null || echo "$VM_SWAPPINESS")
   _v_vfs=$(cat /proc/sys/vm/vfs_cache_pressure 2>/dev/null || echo "$VM_VFS_CACHE_PRESSURE")
@@ -526,6 +892,35 @@ cmd_status_json() {
   _v_pc=$(cat /proc/sys/vm/page-cluster 2>/dev/null || echo "$VM_PAGE_CLUSTER")
   _mglru_en=$(cat /sys/kernel/mm/lru_gen/enabled 2>/dev/null || echo "N/A")
   _mglru_ttl=$(cat /sys/kernel/mm/lru_gen/min_ttl_ms 2>/dev/null || echo "$MGLRU_MIN_TTL_MS")
+
+  _thp_raw=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || echo "")
+  _thp_en=$(extract_bracketed_token "$_thp_raw" 2>/dev/null || echo "$THP_MODE")
+  _thp_shmem_raw=$(cat /sys/kernel/mm/transparent_hugepage/shmem_enabled 2>/dev/null || echo "")
+  _thp_shmem=$(extract_bracketed_token "$_thp_shmem_raw" 2>/dev/null || echo "never")
+
+  _vs_lat=$(cat /proc/vendor_sched/latency_ns 2>/dev/null || echo "4166666")
+  _vs_ramp=$(cat /proc/vendor_sched/adpf_rampup_multiplier 2>/dev/null || echo "2")
+  _vs_ta_min=$(cat /proc/vendor_sched/groups/ta/uclamp_min 2>/dev/null || echo "1")
+  _vs_bg_max=$(cat /proc/vendor_sched/groups/bg/uclamp_max 2>/dev/null || echo "512")
+
+  _cpu_p0_up=$(cat /sys/devices/system/cpu/cpufreq/policy0/sched_pixel/up_rate_limit_us 2>/dev/null || echo "0")
+  _cpu_p0_dn=$(cat /sys/devices/system/cpu/cpufreq/policy0/sched_pixel/down_rate_limit_us 2>/dev/null || echo "2000")
+  _cpu_p0_resp=$(cat /sys/devices/system/cpu/cpufreq/policy0/sched_pixel/response_time_ms 2>/dev/null || echo "4")
+
+  _io_raw=$(cat /sys/block/sda/queue/scheduler 2>/dev/null || echo "")
+  _io_sched=$(extract_bracketed_token "$_io_raw" 2>/dev/null || echo "$IO_SCHEDULER")
+  _io_ra=$(cat /sys/block/sda/queue/read_ahead_kb 2>/dev/null || echo "$IO_READ_AHEAD_KB")
+  _io_nr=$(cat /sys/block/sda/queue/nr_requests 2>/dev/null || echo "$IO_NR_REQUESTS")
+
+  _gpu_pp_raw=$(cat /sys/devices/platform/1c500000.mali/power_policy 2>/dev/null || echo "")
+  _gpu_pp=$(extract_bracketed_token "$_gpu_pp_raw" 2>/dev/null || echo "$GPU_POWER_POLICY")
+  _gpu_gov=$(cat /sys/devices/platform/1c500000.mali/governor 2>/dev/null || echo "quickstep")
+  _gpu_dvfs=$(cat /sys/devices/platform/1c500000.mali/dvfs_period 2>/dev/null || echo "$GPU_DVFS_PERIOD_MS")
+  _gpu_min=$(cat /sys/devices/platform/1c500000.mali/scaling_min_freq 2>/dev/null || echo "151000")
+  _gpu_max=$(cat /sys/devices/platform/1c500000.mali/scaling_max_freq 2>/dev/null || echo "848000")
+
+  _sf_clear=$(getprop ro.surface_flinger.clear_slots_with_set_layer_buffer 2>/dev/null || echo "true")
+  _sf_bufs=$(getprop ro.surface_flinger.max_frame_buffer_acquired_buffers 2>/dev/null || echo "")
 
   _l_psi=$(getprop ro.lmk.use_psi 2>/dev/null || echo "$LMKD_USE_PSI")
   _l_part=$(getprop ro.lmk.psi_partial_stall_ms 2>/dev/null || echo "$LMKD_PSI_PARTIAL_MS")
@@ -546,6 +941,9 @@ cmd_status_json() {
     fi
   fi
 
+  _wd_run=false
+  watchdog_is_running && _wd_run=true
+
   printf '{"device":"%s","android":"%s","build":"%s","kernel":"%s","uptime":"%s",' \
     "$(json_escape "$_dev")" "$(json_escape "$_and")" "$(json_escape "$_bld")" "$(json_escape "$_kern")" "$(json_escape "$_up")"
   printf '"ram":{"total_kb":%s,"free_kb":%s,"available_kb":%s,"cached_kb":%s,"swap_total_kb":%s,"swap_free_kb":%s,"swap_used_kb":%s},' \
@@ -554,14 +952,27 @@ cmd_status_json() {
     "$_zsize" "$(json_escape "$_zactive")" "$(json_escape "$_zalgos")" "$(json_escape "$_zbdev")" "$_zorig" "$_zcompr" "$_zmem"
   printf '"vm":{"swappiness":"%s","vfs_cache_pressure":"%s","watermark_scale_factor":"%s","dirty_background_ratio":"%s","dirty_ratio":"%s","page_cluster":"%s","mglru_enabled":"%s","mglru_min_ttl_ms":"%s"},' \
     "$(json_escape "$_v_swap")" "$(json_escape "$_v_vfs")" "$(json_escape "$_v_wm")" "$(json_escape "$_v_dbr")" "$(json_escape "$_v_dr")" "$(json_escape "$_v_pc")" "$(json_escape "$_mglru_en")" "$(json_escape "$_mglru_ttl")"
+  printf '"thp":{"enabled":"%s","shmem_enabled":"%s"},' \
+    "$(json_escape "$_thp_en")" "$(json_escape "$_thp_shmem")"
+  printf '"sched":{"profile":"%s","latency_ns":"%s","adpf_rampup":"%s","ta_uclamp_min":"%s","bg_uclamp_max":"%s"},' \
+    "$(json_escape "$SCHED_PROFILE")" "$(json_escape "$_vs_lat")" "$(json_escape "$_vs_ramp")" "$(json_escape "$_vs_ta_min")" "$(json_escape "$_vs_bg_max")"
+  printf '"cpufreq":{"profile":"%s","p0_up_us":"%s","p0_down_us":"%s","p0_resp_ms":"%s"},' \
+    "$(json_escape "$CPU_RATE_PROFILE")" "$(json_escape "$_cpu_p0_up")" "$(json_escape "$_cpu_p0_dn")" "$(json_escape "$_cpu_p0_resp")"
+  printf '"io":{"scheduler":"%s","read_ahead_kb":"%s","nr_requests":"%s"},' \
+    "$(json_escape "$_io_sched")" "$(json_escape "$_io_ra")" "$(json_escape "$_io_nr")"
+  printf '"gpu":{"power_policy":"%s","governor":"%s","dvfs_period_ms":"%s","min_freq":"%s","max_freq":"%s"},' \
+    "$(json_escape "$_gpu_pp")" "$(json_escape "$_gpu_gov")" "$(json_escape "$_gpu_dvfs")" "$(json_escape "$_gpu_min")" "$(json_escape "$_gpu_max")"
+  printf '"sf":{"mode":"%s","clear_slots":"%s","max_fb_buffers":"%s"},' \
+    "$(json_escape "$SF_TUNING_MODE")" "$(json_escape "$_sf_clear")" "$(json_escape "$_sf_bufs")"
   printf '"lmkd":{"use_psi":"%s","psi_partial_ms":"%s","psi_complete_ms":"%s","thrashing_limit":"%s","swap_free_low_pct":"%s","swap_util_max":"%s"},' \
     "$(json_escape "$_l_psi")" "$(json_escape "$_l_part")" "$(json_escape "$_l_comp")" "$(json_escape "$_l_thr")" "$(json_escape "$_l_slow")" "$(json_escape "$_l_smax")"
   printf '"art":{"dex2oat_filter":"%s","image_filter":"%s","madvise_odex_bytes":"%s"},' \
     "$(json_escape "$_a_flt")" "$(json_escape "$_a_img")" "$(json_escape "$_a_mad")"
-  printf '"recompile_running":%s,' "$_recomp_run"
-  printf '"config":{"ZRAM_SIZE_MB":%s,"ZRAM_ALGO":"%s","SWAPOFF_HEADROOM_PCT":%s,"VM_SWAPPINESS":%s,"VM_VFS_CACHE_PRESSURE":%s,"VM_WATERMARK_SCALE_FACTOR":%s,"VM_DIRTY_BACKGROUND_RATIO":%s,"VM_DIRTY_RATIO":%s,"VM_PAGE_CLUSTER":%s,"VM_STAT_INTERVAL":%s,"MGLRU_ENABLED":%s,"MGLRU_MIN_TTL_MS":%s,"ART_DEX2OAT_FILTER":"%s","ART_MADVISE_MB":%s,"LMKD_USE_PSI":"%s","LMKD_PSI_PARTIAL_MS":%s,"LMKD_PSI_COMPLETE_MS":%s,"LMKD_THRASHING_LIMIT":%s,"LMKD_THRASHING_DECAY":%s,"LMKD_SWAP_FREE_LOW_PCT":%s,"LMKD_SWAP_UTIL_MAX":%s,"LMKD_KILL_HEAVIEST":"%s","LMKD_KILL_TIMEOUT_MS":%s,"LMKD_DOWNGRADE_PRESSURE":%s,"ACTION_MODE":"%s","RECOMPILE_SCOPE":"%s"}}\n' \
-    "$ZRAM_SIZE_MB" "$ZRAM_ALGO" "$SWAPOFF_HEADROOM_PCT" \
+  printf '"recompile_running":%s,"watchdog_running":%s,' "$_recomp_run" "$_wd_run"
+  printf '"config":{"ZRAM_SIZE_MB":%s,"ZRAM_ALGO":"%s","MMD_ZRAM_SYNC":%s,"SWAPOFF_HEADROOM_PCT":%s,"VM_SWAPPINESS":%s,"VM_VFS_CACHE_PRESSURE":%s,"VM_WATERMARK_SCALE_FACTOR":%s,"VM_DIRTY_BACKGROUND_RATIO":%s,"VM_DIRTY_RATIO":%s,"VM_PAGE_CLUSTER":%s,"VM_STAT_INTERVAL":%s,"MGLRU_ENABLED":%s,"MGLRU_MIN_TTL_MS":%s,"THP_MODE":"%s","SCHED_PROFILE":"%s","CPU_RATE_PROFILE":"%s","IO_SCHEDULER":"%s","IO_READ_AHEAD_KB":%s,"IO_NR_REQUESTS":%s,"GPU_POWER_POLICY":"%s","GPU_DVFS_PERIOD_MS":%s,"SF_TUNING_MODE":"%s","WATCHDOG_ENABLED":%s,"ART_DEX2OAT_FILTER":"%s","ART_MADVISE_MB":%s,"LMKD_USE_PSI":"%s","LMKD_PSI_PARTIAL_MS":%s,"LMKD_PSI_COMPLETE_MS":%s,"LMKD_THRASHING_LIMIT":%s,"LMKD_THRASHING_DECAY":%s,"LMKD_SWAP_FREE_LOW_PCT":%s,"LMKD_SWAP_UTIL_MAX":%s,"LMKD_KILL_HEAVIEST":"%s","LMKD_KILL_TIMEOUT_MS":%s,"LMKD_DOWNGRADE_PRESSURE":%s,"ACTION_MODE":"%s","RECOMPILE_SCOPE":"%s"}}\n' \
+    "$ZRAM_SIZE_MB" "$ZRAM_ALGO" "$MMD_ZRAM_SYNC" "$SWAPOFF_HEADROOM_PCT" \
     "$VM_SWAPPINESS" "$VM_VFS_CACHE_PRESSURE" "$VM_WATERMARK_SCALE_FACTOR" "$VM_DIRTY_BACKGROUND_RATIO" "$VM_DIRTY_RATIO" "$VM_PAGE_CLUSTER" "$VM_STAT_INTERVAL" "$MGLRU_ENABLED" "$MGLRU_MIN_TTL_MS" \
+    "$THP_MODE" "$SCHED_PROFILE" "$CPU_RATE_PROFILE" "$IO_SCHEDULER" "$IO_READ_AHEAD_KB" "$IO_NR_REQUESTS" "$GPU_POWER_POLICY" "$GPU_DVFS_PERIOD_MS" "$SF_TUNING_MODE" "$WATCHDOG_ENABLED" \
     "$ART_DEX2OAT_FILTER" "$ART_MADVISE_MB" \
     "$LMKD_USE_PSI" "$LMKD_PSI_PARTIAL_MS" "$LMKD_PSI_COMPLETE_MS" "$LMKD_THRASHING_LIMIT" "$LMKD_THRASHING_DECAY" "$LMKD_SWAP_FREE_LOW_PCT" "$LMKD_SWAP_UTIL_MAX" "$LMKD_KILL_HEAVIEST" "$LMKD_KILL_TIMEOUT_MS" "$LMKD_DOWNGRADE_PRESSURE" \
     "$ACTION_MODE" "$RECOMPILE_SCOPE"
@@ -687,7 +1098,19 @@ case "$cmd" in
     apply_live_props
     apply_zram
     apply_vm
+    apply_thp
+    apply_sched
+    apply_cpufreq
+    apply_io
+    apply_gpu
     apply_lmkd
+    if [ "${CAVENTUS_NO_WATCHDOG:-0}" != "1" ]; then
+      if [ "$WATCHDOG_ENABLED" = "1" ]; then
+        cmd_watchdog_start
+      else
+        cmd_watchdog_stop
+      fi
+    fi
     ;;
   save-config)
     cmd_save_config "$@"
@@ -713,8 +1136,17 @@ case "$cmd" in
   clear-logs)
     cmd_clear_logs
     ;;
+  watchdog-start)
+    cmd_watchdog_start
+    ;;
+  watchdog-stop)
+    cmd_watchdog_stop
+    ;;
+  watchdog-loop)
+    cmd_watchdog_loop
+    ;;
   help|-h|--help)
-    echo "Usage: $0 {apply|save-config KEY=VAL...|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset]|logs [N]|clear-logs|help}"
+    echo "Usage: $0 {apply|save-config KEY=VAL...|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset]|logs [N]|clear-logs|watchdog-start|watchdog-stop|help}"
     ;;
   *)
     echo "Unknown command: $cmd" >&2
