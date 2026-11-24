@@ -1,55 +1,37 @@
-# Caventus — Pixel 6 (`oriole`) KernelSU RAM Optimizer
+# Caventus — Pixel 6 (`oriole`) KernelSU RAM Optimizer + Material 3 Expressive WebUI
 
-Modul **KernelSU** (*overlay-free*, tanpa modifikasi `/system`) yang dioptimalkan khusus untuk **Google Pixel 6 (`oriole` / Tensor GS101, 8 GB RAM)** berdasarkan hasil audit sistem langsung.
-
----
-
-## Mengapa Modul Ini Dibuat? (Baseline Audit Pixel 6)
-
-Dari hasil inspeksi `dumpsys meminfo`, `/proc/meminfo`, dan `/sys/block/zram0` pada Pixel 6 (`oriole`, Android 17):
-
-| Komponen | Kondisi Bawaan (Sebelum) | Optimasi Caventus | Dampak |
-| :--- | :--- | :--- | :--- |
-| **zRAM** | 3 GB (`lz77eh`), terpakai ~90% (2.7 GB / 863 MB fisik) | **4 GB (`zstd`)**, mempertahankan `backing_dev` writeback + guard anti-OOM saat `swapoff` | Rasio kompresi lebih padat & kapasitas swap lebih lega untuk beban berat/container |
-| **ART / dex2oat** | `dex2oat-filter=everything` & `madvise` 100 MB | **`speed-profile`** & `madvise` **32 MB** | Mengurangi pembengkakan `.odex`/`.art` mmap di RAM |
-| **LMKD (PSI)** | Ambang standar membuat `Cached` menumpuk (~1.85 GB) sebelum dipangkas | **PSI tuning** (`partial=50ms`, `thrashing=60`, `swap_free_low=20%`) + `lmkd.reinit` | Memangkas app cached lebih dini sebelum zRAM penuh sesak |
-| **VM & MGLRU** | `swappiness=60`, `watermark_scale_factor=49`, `dirty=10/20` | `swappiness=80`, `watermark_scale_factor=60`, `dirty=5/15`, MGLRU `min_ttl_ms=1000` | Menyeimbangkan reclaim halaman dingin ke zRAM `zstd` |
+Modul **KernelSU** (*overlay-free*, tanpa modifikasi `/system`) yang dioptimalkan khusus untuk **Google Pixel 6 (`oriole` / Tensor GS101, 8 GB RAM)**, dilengkapi **KernelSU WebUI** bergaya **Material 3 Expressive** (terinspirasi dari [`dpejoh/specter`](https://github.com/dpejoh/specter)) untuk memantau memori secara real-time, mengkustomisasi seluruh parameter tuning, dan menjalankan **ART `speed-profile` recompile (`-f`)** langsung dari WebUI maupun tombol **Action (Run/Execute)** di KernelSU Manager.
 
 ---
 
-## Keamanan & Anti-Bootloop
+## Fitur Utama `v1.1.0`
 
-* **Overlay-free:** Tidak ada direktori `system/` — bebas konflik *overlayfs*, *verity*, maupun *SUSFS*.
-* **Device Guard:** `customize.sh` memverifikasi `arm64` dan `ro.product.device=oriole` (bisa di-override dengan membuat `/sdcard/.caventus_force`).
-* **Writeback & OOM Guard:** `caventus-ctl.sh` mengecek `MemAvailable` sebelum `swapoff` agar tidak memicu OOM, mempertahankan `backing_dev` setelah `zram0/reset`, dan otomatis memulihkan konfigurasi lama jika terjadi error.
-* **Uninstall Bersih:** `uninstall.sh` menghapus `/data/adb/caventus` sepenuhnya saat modul dihapus.
+* **Material 3 Expressive KSU WebUI (`webroot/`):**
+  * 4 tab dengan *floating pill navigation bar* & indikator animasi *spring*: **Home**, **Tuning**, **Tools**, **Settings**.
+  * 9 palet warna tonal Specter (`blue`, `purple`, `green`, `cyan`, `orange`, `pink`, `red`, `yellow`, `grey`) dalam mode **Auto**, **Light**, **Dark**, dan **AMOLED**.
+  * Dukungan dwibahasa (**Indonesia** & **English**).
+* **Kustomisasi Penuh & Sinkronisasi Langsung:**
+  * **zRAM:** ukuran (`1024–6144 MB`, default `4096 MB`) & kompresor (`zstd`, `lz4`, `lzo-rle`, `lz77eh`) dengan **OOM guard** sebelum `swapoff` dan preservasi `backing_dev` writeback.
+  * **ART / `dex2oat`:** filter kompilasi (`speed-profile`, `speed`, `quicken`, `verify`) & batas `madvise` odex/vdex (`32 MB`, turun dari 100 MB stok).
+  * **LMKD (PSI):** `use_psi`, `psi_partial_stall_ms` (`50 ms`), `thrashing_limit` (`60`), `swap_free_low_percentage` (`20%`) + `lmkd.reinit` otomatis.
+  * **Kernel VM & MGLRU:** `vm.swappiness` (`80`), `vm.watermark_scale_factor` (`60`), `vm.vfs_cache_pressure` (`100`), toggle **MGLRU**.
+* **ART Recompile Studio & Tombol Run/Execute (`action.sh`):**
+  * Memaksa aplikasi yang sebelumnya terkompilasi `everything` agar beralih ke `speed-profile` menggunakan `cmd package compile -m speed-profile -f <pkg>` (plus opsi `--reset` dan cakupan `Semua Paket` atau `Aplikasi User -3`).
+  * Bisa dijalankan lewat **WebUI** (dengan terminal streaming progres `[i/N]` secara live) **atau** lewat tombol **Action (Run/Execute)** di KernelSU Manager.
 
 ---
 
 ## Cara Instalasi
 
-1. Unduh **`caventus-oriole-v1.0.0.zip`** dari halaman [**Releases**](https://github.com/aryarifki/caventus/releases) (atau folder `dist/`).
-2. Buka **KernelSU Manager** → tab **Modules** → **Install** → pilih file zip tersebut.
-3. **Reboot** perangkat.
-4. *(Opsional, disarankan sekali saja sambil di-charge)* Jalankan recompile aplikasi yang sudah terlanjur terkompilasi `everything` agar beralih ke `speed-profile`:
-   ```sh
-   su -c "/data/adb/modules/caventus_oriole_ram/bin/caventus-ctl.sh recompile"
-   ```
+1. Unduh **`caventus-oriole-v1.1.0.zip`** dari halaman [**Releases**](https://github.com/aryarifki/caventus/releases) (atau folder `dist/`).
+2. Buka **KernelSU Manager** → tab **Modules** → **Install** → pilih zip tersebut, lalu **Reboot**.
+3. Setelah reboot:
+   * Tap **WebUI** pada kartu modul Caventus untuk memantau RAM/zRAM, mengatur tuning, atau menjalankan **Recompile Aplikasi (`speed-profile`)**.
+   * Atau tap tombol **Action (Run/Execute)** di KernelSU Manager untuk menjalankan `compact` + `recompile` secara langsung.
 
 ---
 
-## Penggunaan & Kustomisasi
-
-* **Tombol Action di KernelSU Manager:** Menjalankan `compact` zRAM + `lmkd.reinit` dan menampilkan ringkasan status RAM/zRAM/LMKD/ART.
-* **Cek Status via Terminal:**
-  ```sh
-  su -c "/data/adb/modules/caventus_oriole_ram/bin/caventus-ctl.sh status"
-  ```
-* **Override Konfigurasi:** Edit `/data/adb/caventus/config.env` (otomatis dibuat saat boot pertama), uncomment parameter yang ingin diubah (mis. `ZRAM_SIZE_MB`, `ZRAM_ALGO`, `VM_SWAPPINESS`), lalu reboot.
-
----
-
-## Build Lokal
+## Build & Verifikasi Lokal
 
 ```bash
 python3 scripts/build_zip.py

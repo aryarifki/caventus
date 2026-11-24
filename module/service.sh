@@ -17,18 +17,7 @@ CONF_FILE="$CONF_DIR/config.env"
 mkdir -p "$CONF_DIR" 2>/dev/null || true
 
 if [ ! -f "$CONF_FILE" ]; then
-  cat <<'EOF' > "$CONF_FILE"
-# Caventus user overrides (uncomment to customize, then reboot)
-# ZRAM_SIZE_MB=4096
-# ZRAM_ALGO=zstd
-# VM_SWAPPINESS=80
-# VM_VFS_CACHE_PRESSURE=100
-# VM_WATERMARK_SCALE_FACTOR=60
-# VM_DIRTY_BACKGROUND_RATIO=5
-# VM_DIRTY_RATIO=15
-# MGLRU_MIN_TTL_MS=1000
-# SWAPOFF_HEADROOM_PCT=80
-EOF
+  "$MODDIR/bin/caventus-ctl.sh" reset-defaults >/dev/null 2>&1 || true
 fi
 
 exec "$MODDIR/bin/caventus-ctl.sh" apply

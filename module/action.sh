@@ -1,11 +1,40 @@
 #!/system/bin/sh
-# Caventus interactive action for KernelSU Manager Action button
+# Caventus interactive Action script for KernelSU Manager Run/Execute button
 
 MODDIR=${0%/*}
+CTL="$MODDIR/bin/caventus-ctl.sh"
+CONF_FILE="/data/adb/caventus/config.env"
 
-"$MODDIR/bin/caventus-ctl.sh" compact
+ACTION_MODE="both"
+ART_DEX2OAT_FILTER="speed-profile"
+RECOMPILE_SCOPE="all"
+
+if [ -f "$CONF_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$CONF_FILE"
+fi
+
+echo "=============================================="
+echo "  Caventus — Pixel 6 (oriole) Action Runner   "
+echo "=============================================="
+echo "Mode: ${ACTION_MODE:-both} | Filter: ${ART_DEX2OAT_FILTER:-speed-profile} | Scope: ${RECOMPILE_SCOPE:-all}"
 echo ""
-"$MODDIR/bin/caventus-ctl.sh" status
+
+case "${ACTION_MODE:-both}" in
+  compact)
+    "$CTL" compact
+    ;;
+  recompile)
+    "$CTL" recompile --filter="${ART_DEX2OAT_FILTER:-speed-profile}" --scope="${RECOMPILE_SCOPE:-all}"
+    ;;
+  both|*)
+    "$CTL" compact
+    echo ""
+    "$CTL" recompile --filter="${ART_DEX2OAT_FILTER:-speed-profile}" --scope="${RECOMPILE_SCOPE:-all}"
+    ;;
+esac
+
 echo ""
-echo "Tip: To recompile existing apps to speed-profile (run once while charging):"
-echo "  su -c \"$MODDIR/bin/caventus-ctl.sh recompile\""
+"$CTL" status
+echo ""
+echo "Action finished."

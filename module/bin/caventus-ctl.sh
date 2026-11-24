@@ -1,26 +1,179 @@
 #!/system/bin/sh
 # Caventus runtime controller for Pixel 6 (oriole / gs101)
 
+if [ -n "${CAVENTUS_MODDIR:-}" ]; then
+  MODDIR="$CAVENTUS_MODDIR"
+else
+  MODDIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+fi
+
 CONFIG_ENV="${CAVENTUS_CONFIG_ENV:-/data/adb/caventus/config.env}"
 LOG_FILE="${CAVENTUS_LOG_FILE:-/data/adb/caventus/caventus.log}"
+LOCK_FILE="${CAVENTUS_LOCK_FILE:-/data/adb/caventus/recompile.lock}"
 
-# Defaults (can be overridden in /data/adb/caventus/config.env)
-ZRAM_SIZE_MB=4096
-ZRAM_ALGO=zstd
-VM_SWAPPINESS=80
-VM_VFS_CACHE_PRESSURE=100
-VM_WATERMARK_SCALE_FACTOR=60
-VM_DIRTY_BACKGROUND_RATIO=5
-VM_DIRTY_RATIO=15
-VM_PAGE_CLUSTER=0
-VM_STAT_INTERVAL=10
-MGLRU_MIN_TTL_MS=1000
-SWAPOFF_HEADROOM_PCT=80
+set_defaults() {
+  ZRAM_SIZE_MB=4096
+  ZRAM_ALGO=zstd
+  SWAPOFF_HEADROOM_PCT=80
+  VM_SWAPPINESS=80
+  VM_VFS_CACHE_PRESSURE=100
+  VM_WATERMARK_SCALE_FACTOR=60
+  VM_DIRTY_BACKGROUND_RATIO=5
+  VM_DIRTY_RATIO=15
+  VM_PAGE_CLUSTER=0
+  VM_STAT_INTERVAL=10
+  MGLRU_ENABLED=1
+  MGLRU_MIN_TTL_MS=1000
+  ART_DEX2OAT_FILTER=speed-profile
+  ART_MADVISE_MB=32
+  LMKD_USE_PSI=true
+  LMKD_PSI_PARTIAL_MS=50
+  LMKD_PSI_COMPLETE_MS=500
+  LMKD_THRASHING_LIMIT=60
+  LMKD_THRASHING_DECAY=15
+  LMKD_SWAP_FREE_LOW_PCT=20
+  LMKD_SWAP_UTIL_MAX=85
+  LMKD_KILL_HEAVIEST=true
+  LMKD_KILL_TIMEOUT_MS=100
+  LMKD_DOWNGRADE_PRESSURE=60
+  ACTION_MODE=both
+  RECOMPILE_SCOPE=all
+}
 
-if [ -f "$CONFIG_ENV" ]; then
-  # shellcheck disable=SC1090
-  . "$CONFIG_ENV"
-fi
+is_uint() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+in_range() {
+  is_uint "$1" || return 1
+  [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]
+}
+
+# Whitelist + bounds validator for config keys
+validate_config_kv() {
+  _k="$1"
+  _v="$2"
+  case "$_k" in
+    ZRAM_SIZE_MB)              in_range "$_v" 512 8192 ;;
+    ZRAM_ALGO)                 case "$_v" in zstd|lz4|lzo-rle|lzo|lz77eh) return 0 ;; *) return 1 ;; esac ;;
+    SWAPOFF_HEADROOM_PCT)      in_range "$_v" 20 95 ;;
+    VM_SWAPPINESS)             in_range "$_v" 1 200 ;;
+    VM_VFS_CACHE_PRESSURE)     in_range "$_v" 10 500 ;;
+    VM_WATERMARK_SCALE_FACTOR) in_range "$_v" 10 500 ;;
+    VM_DIRTY_BACKGROUND_RATIO) in_range "$_v" 1 50 ;;
+    VM_DIRTY_RATIO)            in_range "$_v" 5 80 ;;
+    VM_PAGE_CLUSTER)           in_range "$_v" 0 4 ;;
+    VM_STAT_INTERVAL)          in_range "$_v" 1 60 ;;
+    MGLRU_ENABLED)             case "$_v" in 0|1) return 0 ;; *) return 1 ;; esac ;;
+    MGLRU_MIN_TTL_MS)          in_range "$_v" 0 10000 ;;
+    ART_DEX2OAT_FILTER)        case "$_v" in speed-profile|speed|quicken|verify|everything) return 0 ;; *) return 1 ;; esac ;;
+    ART_MADVISE_MB)            in_range "$_v" 8 256 ;;
+    LMKD_USE_PSI)              case "$_v" in true|false) return 0 ;; *) return 1 ;; esac ;;
+    LMKD_PSI_PARTIAL_MS)       in_range "$_v" 20 500 ;;
+    LMKD_PSI_COMPLETE_MS)      in_range "$_v" 100 2000 ;;
+    LMKD_THRASHING_LIMIT)      in_range "$_v" 10 200 ;;
+    LMKD_THRASHING_DECAY)      in_range "$_v" 1 100 ;;
+    LMKD_SWAP_FREE_LOW_PCT)    in_range "$_v" 5 50 ;;
+    LMKD_SWAP_UTIL_MAX)        in_range "$_v" 50 100 ;;
+    LMKD_KILL_HEAVIEST)        case "$_v" in true|false) return 0 ;; *) return 1 ;; esac ;;
+    LMKD_KILL_TIMEOUT_MS)      in_range "$_v" 20 1000 ;;
+    LMKD_DOWNGRADE_PRESSURE)   in_range "$_v" 10 100 ;;
+    ACTION_MODE)               case "$_v" in both|recompile|compact) return 0 ;; *) return 1 ;; esac ;;
+    RECOMPILE_SCOPE)           case "$_v" in all|third_party) return 0 ;; *) return 1 ;; esac ;;
+    *) return 1 ;;
+  esac
+}
+
+load_config() {
+  set_defaults
+  [ -f "$CONFIG_ENV" ] || return 0
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    case "$_line" in
+      ''|'#'*) continue ;;
+      *=*)
+        _k=${_line%%=*}
+        _v=${_line#*=}
+        if validate_config_kv "$_k" "$_v"; then
+          eval "${_k}=\"${_v}\""
+        fi
+        ;;
+    esac
+  done < "$CONFIG_ENV"
+}
+
+write_config_file() {
+  _cdir=$(dirname "$CONFIG_ENV")
+  mkdir -p "$_cdir" 2>/dev/null || true
+  _tmp="${CONFIG_ENV}.tmp.$$"
+  cat <<EOF > "$_tmp"
+# Caventus Pixel 6 (oriole) configuration
+ZRAM_SIZE_MB=$ZRAM_SIZE_MB
+ZRAM_ALGO=$ZRAM_ALGO
+SWAPOFF_HEADROOM_PCT=$SWAPOFF_HEADROOM_PCT
+VM_SWAPPINESS=$VM_SWAPPINESS
+VM_VFS_CACHE_PRESSURE=$VM_VFS_CACHE_PRESSURE
+VM_WATERMARK_SCALE_FACTOR=$VM_WATERMARK_SCALE_FACTOR
+VM_DIRTY_BACKGROUND_RATIO=$VM_DIRTY_BACKGROUND_RATIO
+VM_DIRTY_RATIO=$VM_DIRTY_RATIO
+VM_PAGE_CLUSTER=$VM_PAGE_CLUSTER
+VM_STAT_INTERVAL=$VM_STAT_INTERVAL
+MGLRU_ENABLED=$MGLRU_ENABLED
+MGLRU_MIN_TTL_MS=$MGLRU_MIN_TTL_MS
+ART_DEX2OAT_FILTER=$ART_DEX2OAT_FILTER
+ART_MADVISE_MB=$ART_MADVISE_MB
+LMKD_USE_PSI=$LMKD_USE_PSI
+LMKD_PSI_PARTIAL_MS=$LMKD_PSI_PARTIAL_MS
+LMKD_PSI_COMPLETE_MS=$LMKD_PSI_COMPLETE_MS
+LMKD_THRASHING_LIMIT=$LMKD_THRASHING_LIMIT
+LMKD_THRASHING_DECAY=$LMKD_THRASHING_DECAY
+LMKD_SWAP_FREE_LOW_PCT=$LMKD_SWAP_FREE_LOW_PCT
+LMKD_SWAP_UTIL_MAX=$LMKD_SWAP_UTIL_MAX
+LMKD_KILL_HEAVIEST=$LMKD_KILL_HEAVIEST
+LMKD_KILL_TIMEOUT_MS=$LMKD_KILL_TIMEOUT_MS
+LMKD_DOWNGRADE_PRESSURE=$LMKD_DOWNGRADE_PRESSURE
+ACTION_MODE=$ACTION_MODE
+RECOMPILE_SCOPE=$RECOMPILE_SCOPE
+EOF
+  mv -f "$_tmp" "$CONFIG_ENV"
+}
+
+sync_system_prop() {
+  _madvise_bytes=$((ART_MADVISE_MB * 1048576))
+  _sp_path="$MODDIR/system.prop"
+  _sp_tmp="${_sp_path}.tmp.$$"
+  mkdir -p "$MODDIR" 2>/dev/null || true
+  cat <<EOF > "$_sp_tmp"
+# === Caventus: Pixel 6 (oriole / GS101) Memory Optimization ===
+# Generated by caventus-ctl.sh
+
+# 1. ART / dex2oat
+dalvik.vm.dex2oat-filter=$ART_DEX2OAT_FILTER
+dalvik.vm.image-dex2oat-filter=$ART_DEX2OAT_FILTER
+pm.dexopt.install=$ART_DEX2OAT_FILTER
+pm.dexopt.bg-dexopt=$ART_DEX2OAT_FILTER
+pm.dexopt.shared=speed
+dalvik.vm.madvise.odexfile.size=$_madvise_bytes
+dalvik.vm.madvise.vdexfile.size=$_madvise_bytes
+
+# 2. LMKD — PSI-based tuning for 8 GB Pixel 6
+ro.lmk.use_psi=$LMKD_USE_PSI
+ro.lmk.use_minfree_levels=false
+ro.lmk.psi_partial_stall_ms=$LMKD_PSI_PARTIAL_MS
+ro.lmk.psi_complete_stall_ms=$LMKD_PSI_COMPLETE_MS
+ro.lmk.thrashing_limit=$LMKD_THRASHING_LIMIT
+ro.lmk.thrashing_limit_decay=$LMKD_THRASHING_DECAY
+ro.lmk.swap_free_low_percentage=$LMKD_SWAP_FREE_LOW_PCT
+ro.lmk.swap_util_max=$LMKD_SWAP_UTIL_MAX
+ro.lmk.kill_heaviest_task=$LMKD_KILL_HEAVIEST
+ro.lmk.kill_timeout_ms=$LMKD_KILL_TIMEOUT_MS
+ro.lmk.downgrade_pressure=$LMKD_DOWNGRADE_PRESSURE
+ro.lmk.debug=false
+EOF
+  mv -f "$_sp_tmp" "$_sp_path"
+}
 
 log_msg() {
   ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "boot")
@@ -32,43 +185,57 @@ log_msg() {
 }
 
 resolve_cmd() {
-  name="$1"
-  if [ -x "/system/bin/$name" ]; then
-    echo "/system/bin/$name"
+  _name="$1"
+  if [ -x "/system/bin/$_name" ]; then
+    echo "/system/bin/$_name"
     return 0
   fi
-  found=$(command -v "$name" 2>/dev/null || true)
-  if [ -n "$found" ]; then
-    echo "$found"
+  _found=$(command -v "$_name" 2>/dev/null || true)
+  if [ -n "$_found" ]; then
+    echo "$_found"
     return 0
   fi
   if command -v toybox >/dev/null 2>&1; then
-    echo "toybox $name"
+    echo "toybox $_name"
+    return 0
+  fi
+  return 1
+}
+
+resolve_resetprop() {
+  for _rp in /data/adb/ksu/bin/resetprop /data/adb/magisk/resetprop /data/adb/ap/bin/resetprop; do
+    if [ -x "$_rp" ]; then
+      echo "$_rp"
+      return 0
+    fi
+  done
+  _rp=$(command -v resetprop 2>/dev/null || true)
+  if [ -n "$_rp" ]; then
+    echo "$_rp"
     return 0
   fi
   return 1
 }
 
 write_node() {
-  path="$1"
-  val="$2"
-  if [ -w "$path" ]; then
-    printf '%s' "$val" > "$path" 2>/dev/null || return 1
+  _path="$1"
+  _val="$2"
+  if [ -w "$_path" ]; then
+    printf '%s' "$_val" > "$_path" 2>/dev/null || return 1
     return 0
   fi
   return 1
 }
 
-# Pure helper: pick requested algo if supported, else fallback zstd -> lz4 -> lzo-rle -> lzo
 pick_zram_algo() {
-  requested="$1"
-  avail="$2"
-  for candidate in "$requested" zstd lz4 lzo-rle lzo; do
-    [ -z "$candidate" ] && continue
-    for tok in $avail; do
-      clean=$(printf '%s' "$tok" | tr -d '[]')
-      if [ "$clean" = "$candidate" ]; then
-        printf '%s\n' "$candidate"
+  _requested="$1"
+  _avail="$2"
+  for _candidate in "$_requested" zstd lz4 lzo-rle lzo; do
+    [ -z "$_candidate" ] && continue
+    for _tok in $_avail; do
+      _clean=$(printf '%s' "$_tok" | tr -d '[]')
+      if [ "$_clean" = "$_candidate" ]; then
+        printf '%s\n' "$_candidate"
         return 0
       fi
     done
@@ -76,30 +243,29 @@ pick_zram_algo() {
   return 1
 }
 
-# Pure helper: returns 0 if SwapUsed * 100 < MemAvailable * headroom_pct
 can_safely_swapoff() {
-  swap_used_kb="$1"
-  mem_avail_kb="$2"
-  headroom_pct="${3:-80}"
-  [ -z "$swap_used_kb" ] && swap_used_kb=0
-  [ -z "$mem_avail_kb" ] && mem_avail_kb=0
-  if [ "$swap_used_kb" -le 0 ]; then
+  _swap_used_kb="$1"
+  _mem_avail_kb="$2"
+  _headroom_pct="${3:-80}"
+  [ -z "$_swap_used_kb" ] && _swap_used_kb=0
+  [ -z "$_mem_avail_kb" ] && _mem_avail_kb=0
+  if [ "$_swap_used_kb" -le 0 ]; then
     return 0
   fi
-  if [ "$mem_avail_kb" -le 0 ]; then
+  if [ "$_mem_avail_kb" -le 0 ]; then
     return 1
   fi
-  lhs=$((swap_used_kb * 100))
-  rhs=$((mem_avail_kb * headroom_pct))
-  [ "$lhs" -lt "$rhs" ]
+  _lhs=$((_swap_used_kb * 100))
+  _rhs=$((_mem_avail_kb * _headroom_pct))
+  [ "$_lhs" -lt "$_rhs" ]
 }
 
 extract_active_algo() {
-  avail="$1"
-  for tok in $avail; do
-    case "$tok" in
+  _avail="$1"
+  for _tok in $_avail; do
+    case "$_tok" in
       \[*\])
-        printf '%s\n' "$tok" | tr -d '[]'
+        printf '%s\n' "$_tok" | tr -d '[]'
         return 0
         ;;
     esac
@@ -108,8 +274,35 @@ extract_active_algo() {
 }
 
 read_meminfo_kb() {
-  key="$1"
-  awk -v k="${key}:" '$1 == k {print $2; exit}' /proc/meminfo 2>/dev/null
+  _key="$1"
+  awk -v k="${_key}:" '$1 == k {print $2; exit}' /proc/meminfo 2>/dev/null
+}
+
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' | tr '\n\r' '  '
+}
+
+apply_live_props() {
+  _rp=$(resolve_resetprop 2>/dev/null || true)
+  [ -z "$_rp" ] && return 0
+  _madvise_bytes=$((ART_MADVISE_MB * 1048576))
+  "$_rp" -n dalvik.vm.dex2oat-filter "$ART_DEX2OAT_FILTER" 2>/dev/null || true
+  "$_rp" -n dalvik.vm.image-dex2oat-filter "$ART_DEX2OAT_FILTER" 2>/dev/null || true
+  "$_rp" -n pm.dexopt.install "$ART_DEX2OAT_FILTER" 2>/dev/null || true
+  "$_rp" -n pm.dexopt.bg-dexopt "$ART_DEX2OAT_FILTER" 2>/dev/null || true
+  "$_rp" -n dalvik.vm.madvise.odexfile.size "$_madvise_bytes" 2>/dev/null || true
+  "$_rp" -n dalvik.vm.madvise.vdexfile.size "$_madvise_bytes" 2>/dev/null || true
+  "$_rp" -n ro.lmk.use_psi "$LMKD_USE_PSI" 2>/dev/null || true
+  "$_rp" -n ro.lmk.use_minfree_levels "false" 2>/dev/null || true
+  "$_rp" -n ro.lmk.psi_partial_stall_ms "$LMKD_PSI_PARTIAL_MS" 2>/dev/null || true
+  "$_rp" -n ro.lmk.psi_complete_stall_ms "$LMKD_PSI_COMPLETE_MS" 2>/dev/null || true
+  "$_rp" -n ro.lmk.thrashing_limit "$LMKD_THRASHING_LIMIT" 2>/dev/null || true
+  "$_rp" -n ro.lmk.thrashing_limit_decay "$LMKD_THRASHING_DECAY" 2>/dev/null || true
+  "$_rp" -n ro.lmk.swap_free_low_percentage "$LMKD_SWAP_FREE_LOW_PCT" 2>/dev/null || true
+  "$_rp" -n ro.lmk.swap_util_max "$LMKD_SWAP_UTIL_MAX" 2>/dev/null || true
+  "$_rp" -n ro.lmk.kill_heaviest_task "$LMKD_KILL_HEAVIEST" 2>/dev/null || true
+  "$_rp" -n ro.lmk.kill_timeout_ms "$LMKD_KILL_TIMEOUT_MS" 2>/dev/null || true
+  "$_rp" -n ro.lmk.downgrade_pressure "$LMKD_DOWNGRADE_PRESSURE" 2>/dev/null || true
 }
 
 apply_zram() {
@@ -147,7 +340,7 @@ apply_zram() {
   swap_used=$((swap_total - swap_free))
 
   if [ "$swap_active" -eq 1 ] && ! can_safely_swapoff "$swap_used" "$mem_avail" "$SWAPOFF_HEADROOM_PCT"; then
-    log_msg "ABORT zram0 resize: SwapUsed=${swap_used}kB too high vs MemAvailable=${mem_avail}kB (headroom ${SWAPOFF_HEADROOM_PCT}%). Keeping current swap safe."
+    log_msg "DEFERRED zram0 resize: SwapUsed=$((swap_used / 1024))MB vs MemAvailable=$((mem_avail / 1024))MB (headroom ${SWAPOFF_HEADROOM_PCT}%). Reboot to apply new zRAM size/algo safely."
     return 0
   fi
 
@@ -214,16 +407,17 @@ apply_vm() {
   write_node /proc/sys/vm/stat_interval "$VM_STAT_INTERVAL" || true
 
   if [ -w /sys/kernel/mm/lru_gen/enabled ]; then
-    cur_mglru=$(cat /sys/kernel/mm/lru_gen/enabled 2>/dev/null || echo "0")
-    case "$cur_mglru" in
-      0|0x0000|n|N) write_node /sys/kernel/mm/lru_gen/enabled "y" || true ;;
-    esac
+    if [ "$MGLRU_ENABLED" = "1" ]; then
+      write_node /sys/kernel/mm/lru_gen/enabled "y" || true
+    else
+      write_node /sys/kernel/mm/lru_gen/enabled "0" || true
+    fi
   fi
   if [ -w /sys/kernel/mm/lru_gen/min_ttl_ms ]; then
     write_node /sys/kernel/mm/lru_gen/min_ttl_ms "$MGLRU_MIN_TTL_MS" || true
   fi
 
-  log_msg "VM sysctls applied (swappiness=$VM_SWAPPINESS, watermark_scale=$VM_WATERMARK_SCALE_FACTOR, dirty=${VM_DIRTY_BACKGROUND_RATIO}/${VM_DIRTY_RATIO})."
+  log_msg "VM sysctls applied (swappiness=$VM_SWAPPINESS, watermark_scale=$VM_WATERMARK_SCALE_FACTOR, dirty=${VM_DIRTY_BACKGROUND_RATIO}/${VM_DIRTY_RATIO}, mglru=$MGLRU_ENABLED)."
 }
 
 apply_lmkd() {
@@ -231,10 +425,50 @@ apply_lmkd() {
   if command -v lmkd >/dev/null 2>&1; then
     lmkd --reinit 2>/dev/null || true
   fi
-  log_msg "LMKD reinitialized (use_psi=$(getprop ro.lmk.use_psi), partial_ms=$(getprop ro.lmk.psi_partial_stall_ms), thrash=$(getprop ro.lmk.thrashing_limit), swap_low=$(getprop ro.lmk.swap_free_low_percentage)%)."
+  log_msg "LMKD reinitialized (use_psi=$(getprop ro.lmk.use_psi 2>/dev/null), partial_ms=$(getprop ro.lmk.psi_partial_stall_ms 2>/dev/null), thrash=$(getprop ro.lmk.thrashing_limit 2>/dev/null), swap_low=$(getprop ro.lmk.swap_free_low_percentage 2>/dev/null)%)."
+}
+
+cmd_save_config() {
+  load_config
+  if [ "$#" -eq 0 ]; then
+    echo "No KEY=VAL pairs provided" >&2
+    return 1
+  fi
+  for _arg in "$@"; do
+    case "$_arg" in
+      *=*)
+        _k=${_arg%%=*}
+        _v=${_arg#*=}
+        if ! validate_config_kv "$_k" "$_v"; then
+          echo "Invalid config parameter: $_k=$_v" >&2
+          return 1
+        fi
+        eval "${_k}=\"${_v}\""
+        ;;
+      *)
+        echo "Invalid argument format (expected KEY=VAL): $_arg" >&2
+        return 1
+        ;;
+    esac
+  done
+  write_config_file
+  sync_system_prop
+  apply_live_props
+  log_msg "Saved config & synced system.prop ($# updates)."
+}
+
+cmd_reset_defaults() {
+  set_defaults
+  write_config_file
+  sync_system_prop
+  apply_live_props
+  apply_vm
+  apply_lmkd
+  log_msg "Configuration reset to Pixel 6 (oriole) defaults."
 }
 
 cmd_status() {
+  load_config
   mem_total=$(read_meminfo_kb MemTotal)
   mem_avail=$(read_meminfo_kb MemAvailable)
   swap_total=$(read_meminfo_kb SwapTotal)
@@ -254,8 +488,83 @@ cmd_status() {
   echo "zRAM stat  : $zram_stat"
   echo "VM         : swappiness=$(cat /proc/sys/vm/swappiness 2>/dev/null) | wm_scale=$(cat /proc/sys/vm/watermark_scale_factor 2>/dev/null) | vfs_cache=$(cat /proc/sys/vm/vfs_cache_pressure 2>/dev/null) | page_cluster=$(cat /proc/sys/vm/page-cluster 2>/dev/null)"
   echo "MGLRU      : enabled=$mglru_en | min_ttl_ms=$mglru_ttl"
-  echo "LMKD       : use_psi=$(getprop ro.lmk.use_psi) | partial_ms=$(getprop ro.lmk.psi_partial_stall_ms) | complete_ms=$(getprop ro.lmk.psi_complete_stall_ms) | thrashing=$(getprop ro.lmk.thrashing_limit) | swap_low=$(getprop ro.lmk.swap_free_low_percentage)%"
-  echo "ART        : dex2oat-filter=$(getprop dalvik.vm.dex2oat-filter) | image-filter=$(getprop dalvik.vm.image-dex2oat-filter)"
+  echo "LMKD       : use_psi=$(getprop ro.lmk.use_psi 2>/dev/null) | partial_ms=$(getprop ro.lmk.psi_partial_stall_ms 2>/dev/null) | complete_ms=$(getprop ro.lmk.psi_complete_stall_ms 2>/dev/null) | thrashing=$(getprop ro.lmk.thrashing_limit 2>/dev/null) | swap_low=$(getprop ro.lmk.swap_free_low_percentage 2>/dev/null)%"
+  echo "ART        : dex2oat-filter=$(getprop dalvik.vm.dex2oat-filter 2>/dev/null) | image-filter=$(getprop dalvik.vm.image-dex2oat-filter 2>/dev/null)"
+}
+
+cmd_status_json() {
+  load_config
+  _dev=$(getprop ro.product.device 2>/dev/null || echo "oriole")
+  _and=$(getprop ro.build.version.release 2>/dev/null || echo "17")
+  _bld=$(getprop ro.build.display.id 2>/dev/null || echo "unknown")
+  _kern=$(uname -r 2>/dev/null || echo "unknown")
+  _up=$(uptime 2>/dev/null | sed 's/^ *//' || echo "unknown")
+
+  _mt=$(read_meminfo_kb MemTotal); _mt=${_mt:-0}
+  _mf=$(read_meminfo_kb MemFree); _mf=${_mf:-0}
+  _ma=$(read_meminfo_kb MemAvailable); _ma=${_ma:-0}
+  _ca=$(read_meminfo_kb Cached); _ca=${_ca:-0}
+  _st=$(read_meminfo_kb SwapTotal); _st=${_st:-0}
+  _sf=$(read_meminfo_kb SwapFree); _sf=${_sf:-0}
+  _su=$((_st - _sf))
+
+  _zsize=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
+  _zalgos=$(cat /sys/block/zram0/comp_algorithm 2>/dev/null || echo "")
+  _zactive=$(extract_active_algo "$_zalgos" 2>/dev/null || echo "unknown")
+  _zbdev=$(cat /sys/block/zram0/backing_dev 2>/dev/null || echo "none")
+  _zorig=0; _zcompr=0; _zmem=0
+  if [ -r /sys/block/zram0/mm_stat ]; then
+    set -- $(cat /sys/block/zram0/mm_stat 2>/dev/null)
+    _zorig=${1:-0}; _zcompr=${2:-0}; _zmem=${3:-0}
+  fi
+
+  _v_swap=$(cat /proc/sys/vm/swappiness 2>/dev/null || echo "$VM_SWAPPINESS")
+  _v_vfs=$(cat /proc/sys/vm/vfs_cache_pressure 2>/dev/null || echo "$VM_VFS_CACHE_PRESSURE")
+  _v_wm=$(cat /proc/sys/vm/watermark_scale_factor 2>/dev/null || echo "$VM_WATERMARK_SCALE_FACTOR")
+  _v_dbr=$(cat /proc/sys/vm/dirty_background_ratio 2>/dev/null || echo "$VM_DIRTY_BACKGROUND_RATIO")
+  _v_dr=$(cat /proc/sys/vm/dirty_ratio 2>/dev/null || echo "$VM_DIRTY_RATIO")
+  _v_pc=$(cat /proc/sys/vm/page-cluster 2>/dev/null || echo "$VM_PAGE_CLUSTER")
+  _mglru_en=$(cat /sys/kernel/mm/lru_gen/enabled 2>/dev/null || echo "N/A")
+  _mglru_ttl=$(cat /sys/kernel/mm/lru_gen/min_ttl_ms 2>/dev/null || echo "$MGLRU_MIN_TTL_MS")
+
+  _l_psi=$(getprop ro.lmk.use_psi 2>/dev/null || echo "$LMKD_USE_PSI")
+  _l_part=$(getprop ro.lmk.psi_partial_stall_ms 2>/dev/null || echo "$LMKD_PSI_PARTIAL_MS")
+  _l_comp=$(getprop ro.lmk.psi_complete_stall_ms 2>/dev/null || echo "$LMKD_PSI_COMPLETE_MS")
+  _l_thr=$(getprop ro.lmk.thrashing_limit 2>/dev/null || echo "$LMKD_THRASHING_LIMIT")
+  _l_slow=$(getprop ro.lmk.swap_free_low_percentage 2>/dev/null || echo "$LMKD_SWAP_FREE_LOW_PCT")
+  _l_smax=$(getprop ro.lmk.swap_util_max 2>/dev/null || echo "$LMKD_SWAP_UTIL_MAX")
+
+  _a_flt=$(getprop dalvik.vm.dex2oat-filter 2>/dev/null || echo "$ART_DEX2OAT_FILTER")
+  _a_img=$(getprop dalvik.vm.image-dex2oat-filter 2>/dev/null || echo "$ART_DEX2OAT_FILTER")
+  _a_mad=$(getprop dalvik.vm.madvise.odexfile.size 2>/dev/null || echo $((ART_MADVISE_MB * 1048576)))
+
+  _recomp_run=false
+  if [ -f "$LOCK_FILE" ]; then
+    _lpid=$(cat "$LOCK_FILE" 2>/dev/null || true)
+    if is_uint "$_lpid" && kill -0 "$_lpid" 2>/dev/null; then
+      _recomp_run=true
+    fi
+  fi
+
+  printf '{"device":"%s","android":"%s","build":"%s","kernel":"%s","uptime":"%s",' \
+    "$(json_escape "$_dev")" "$(json_escape "$_and")" "$(json_escape "$_bld")" "$(json_escape "$_kern")" "$(json_escape "$_up")"
+  printf '"ram":{"total_kb":%s,"free_kb":%s,"available_kb":%s,"cached_kb":%s,"swap_total_kb":%s,"swap_free_kb":%s,"swap_used_kb":%s},' \
+    "$_mt" "$_mf" "$_ma" "$_ca" "$_st" "$_sf" "$_su"
+  printf '"zram":{"disksize_bytes":%s,"active_algo":"%s","avail_algos":"%s","backing_dev":"%s","orig_data_bytes":%s,"compr_data_bytes":%s,"mem_used_bytes":%s},' \
+    "$_zsize" "$(json_escape "$_zactive")" "$(json_escape "$_zalgos")" "$(json_escape "$_zbdev")" "$_zorig" "$_zcompr" "$_zmem"
+  printf '"vm":{"swappiness":"%s","vfs_cache_pressure":"%s","watermark_scale_factor":"%s","dirty_background_ratio":"%s","dirty_ratio":"%s","page_cluster":"%s","mglru_enabled":"%s","mglru_min_ttl_ms":"%s"},' \
+    "$(json_escape "$_v_swap")" "$(json_escape "$_v_vfs")" "$(json_escape "$_v_wm")" "$(json_escape "$_v_dbr")" "$(json_escape "$_v_dr")" "$(json_escape "$_v_pc")" "$(json_escape "$_mglru_en")" "$(json_escape "$_mglru_ttl")"
+  printf '"lmkd":{"use_psi":"%s","psi_partial_ms":"%s","psi_complete_ms":"%s","thrashing_limit":"%s","swap_free_low_pct":"%s","swap_util_max":"%s"},' \
+    "$(json_escape "$_l_psi")" "$(json_escape "$_l_part")" "$(json_escape "$_l_comp")" "$(json_escape "$_l_thr")" "$(json_escape "$_l_slow")" "$(json_escape "$_l_smax")"
+  printf '"art":{"dex2oat_filter":"%s","image_filter":"%s","madvise_odex_bytes":"%s"},' \
+    "$(json_escape "$_a_flt")" "$(json_escape "$_a_img")" "$(json_escape "$_a_mad")"
+  printf '"recompile_running":%s,' "$_recomp_run"
+  printf '"config":{"ZRAM_SIZE_MB":%s,"ZRAM_ALGO":"%s","SWAPOFF_HEADROOM_PCT":%s,"VM_SWAPPINESS":%s,"VM_VFS_CACHE_PRESSURE":%s,"VM_WATERMARK_SCALE_FACTOR":%s,"VM_DIRTY_BACKGROUND_RATIO":%s,"VM_DIRTY_RATIO":%s,"VM_PAGE_CLUSTER":%s,"VM_STAT_INTERVAL":%s,"MGLRU_ENABLED":%s,"MGLRU_MIN_TTL_MS":%s,"ART_DEX2OAT_FILTER":"%s","ART_MADVISE_MB":%s,"LMKD_USE_PSI":"%s","LMKD_PSI_PARTIAL_MS":%s,"LMKD_PSI_COMPLETE_MS":%s,"LMKD_THRASHING_LIMIT":%s,"LMKD_THRASHING_DECAY":%s,"LMKD_SWAP_FREE_LOW_PCT":%s,"LMKD_SWAP_UTIL_MAX":%s,"LMKD_KILL_HEAVIEST":"%s","LMKD_KILL_TIMEOUT_MS":%s,"LMKD_DOWNGRADE_PRESSURE":%s,"ACTION_MODE":"%s","RECOMPILE_SCOPE":"%s"}}\n' \
+    "$ZRAM_SIZE_MB" "$ZRAM_ALGO" "$SWAPOFF_HEADROOM_PCT" \
+    "$VM_SWAPPINESS" "$VM_VFS_CACHE_PRESSURE" "$VM_WATERMARK_SCALE_FACTOR" "$VM_DIRTY_BACKGROUND_RATIO" "$VM_DIRTY_RATIO" "$VM_PAGE_CLUSTER" "$VM_STAT_INTERVAL" "$MGLRU_ENABLED" "$MGLRU_MIN_TTL_MS" \
+    "$ART_DEX2OAT_FILTER" "$ART_MADVISE_MB" \
+    "$LMKD_USE_PSI" "$LMKD_PSI_PARTIAL_MS" "$LMKD_PSI_COMPLETE_MS" "$LMKD_THRASHING_LIMIT" "$LMKD_THRASHING_DECAY" "$LMKD_SWAP_FREE_LOW_PCT" "$LMKD_SWAP_UTIL_MAX" "$LMKD_KILL_HEAVIEST" "$LMKD_KILL_TIMEOUT_MS" "$LMKD_DOWNGRADE_PRESSURE" \
+    "$ACTION_MODE" "$RECOMPILE_SCOPE"
 }
 
 cmd_compact() {
@@ -269,41 +578,146 @@ cmd_compact() {
 }
 
 cmd_recompile() {
-  echo "Recompiling installed packages with speed-profile (this may take several minutes; keep device cool/charging)..."
-  log_msg "Starting manual ART recompile (speed-profile)."
-  if cmd package compile -m speed-profile -a; then
-    log_msg "ART speed-profile recompile completed."
-  else
-    log_msg "ART speed-profile recompile returned non-zero status."
+  load_config
+  _filter="$ART_DEX2OAT_FILTER"
+  _scope="$RECOMPILE_SCOPE"
+  _do_reset=0
+
+  for _arg in "$@"; do
+    case "$_arg" in
+      --filter=*) _filter=${_arg#--filter=} ;;
+      --scope=*)  _scope=${_arg#--scope=} ;;
+      --reset)    _do_reset=1 ;;
+      *)          echo "Unknown recompile option: $_arg" >&2; return 1 ;;
+    esac
+  done
+
+  if ! validate_config_kv ART_DEX2OAT_FILTER "$_filter"; then
+    echo "Invalid filter: $_filter" >&2
     return 1
   fi
+  if ! validate_config_kv RECOMPILE_SCOPE "$_scope"; then
+    echo "Invalid scope: $_scope" >&2
+    return 1
+  fi
+
+  _ldir=$(dirname "$LOCK_FILE")
+  mkdir -p "$_ldir" 2>/dev/null || true
+  if [ -f "$LOCK_FILE" ]; then
+    _old_pid=$(cat "$LOCK_FILE" 2>/dev/null || true)
+    if is_uint "$_old_pid" && kill -0 "$_old_pid" 2>/dev/null; then
+      echo "Recompile already running (PID $_old_pid)." >&2
+      return 1
+    fi
+    rm -f "$LOCK_FILE"
+  fi
+  echo "$$" > "$LOCK_FILE"
+  trap 'rm -f "$LOCK_FILE"' EXIT INT TERM
+
+  _start_ts=$(date +%s 2>/dev/null || echo 0)
+  log_msg "Starting forced ART recompile: filter=$_filter, scope=$_scope, reset=$_do_reset"
+
+  _pm_flag=""
+  [ "$_scope" = "third_party" ] && _pm_flag="-3"
+
+  _pkgs=$(pm list packages $_pm_flag 2>/dev/null | sed 's/^package://' | sort)
+  if [ -z "$_pkgs" ]; then
+    echo "Package list empty; running bulk cmd package compile -m $_filter -f -a ..."
+    if cmd package compile -m "$_filter" -f -a; then
+      log_msg "Bulk ART recompile (-m $_filter -f -a) completed."
+      return 0
+    fi
+    log_msg "Bulk ART recompile failed."
+    return 1
+  fi
+
+  _total=$(printf '%s\n' "$_pkgs" | wc -l | tr -d ' ')
+  echo "TOTAL=$_total"
+  _i=0
+  _ok=0
+  _skip=0
+
+  for _pkg in $_pkgs; do
+    _i=$((_i + 1))
+    if [ "$_do_reset" -eq 1 ]; then
+      cmd package compile --reset "$_pkg" >/dev/null 2>&1 || true
+    fi
+    if cmd package compile -m "$_filter" -f "$_pkg" >/dev/null 2>&1; then
+      _ok=$((_ok + 1))
+      echo "[$_i/$_total] ok: $_pkg"
+    else
+      _skip=$((_skip + 1))
+      echo "[$_i/$_total] skip: $_pkg"
+    fi
+  done
+
+  _end_ts=$(date +%s 2>/dev/null || echo 0)
+  _elapsed=$((_end_ts - _start_ts))
+  log_msg "ART recompile finished: filter=$_filter ok=$_ok skip=$_skip total=$_total elapsed=${_elapsed}s"
+  return 0
+}
+
+cmd_logs() {
+  _n="${1:-120}"
+  is_uint "$_n" || _n=120
+  if [ -f "$LOG_FILE" ]; then
+    tail -n "$_n" "$LOG_FILE"
+  else
+    echo "No logs yet at $LOG_FILE"
+  fi
+}
+
+cmd_clear_logs() {
+  _ldir=$(dirname "$LOG_FILE")
+  mkdir -p "$_ldir" 2>/dev/null || true
+  : > "$LOG_FILE"
+  log_msg "Logs cleared."
 }
 
 if [ "${CAVENTUS_SOURCE_ONLY:-0}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-case "${1:-status}" in
+cmd="${1:-status}"
+[ "$#" -gt 0 ] && shift
+
+case "$cmd" in
   apply)
+    load_config
+    apply_live_props
     apply_zram
     apply_vm
     apply_lmkd
     ;;
+  save-config)
+    cmd_save_config "$@"
+    ;;
+  reset-defaults)
+    cmd_reset_defaults
+    ;;
   status)
     cmd_status
+    ;;
+  status-json)
+    cmd_status_json
     ;;
   compact)
     cmd_compact
     ;;
   recompile)
-    cmd_recompile
+    cmd_recompile "$@"
+    ;;
+  logs)
+    cmd_logs "$@"
+    ;;
+  clear-logs)
+    cmd_clear_logs
     ;;
   help|-h|--help)
-    echo "Usage: $0 {apply|status|compact|recompile|help}"
+    echo "Usage: $0 {apply|save-config KEY=VAL...|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset]|logs [N]|clear-logs|help}"
     ;;
   *)
-    echo "Unknown command: $1" >&2
-    echo "Usage: $0 {apply|status|compact|recompile|help}" >&2
+    echo "Unknown command: $cmd" >&2
     exit 1
     ;;
 esac

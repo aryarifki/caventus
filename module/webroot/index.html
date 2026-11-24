@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="id" data-theme-resolved="dark" data-theme-mode="dark" data-theme-accent="blue">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Caventus — Pixel 6 RAM Optimizer</title>
+  <link rel="stylesheet" href="./css/app.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sticky Top Bar -->
+    <header class="app-top-bar" id="top-bar">
+      <div class="app-top-bar-inner">
+        <div class="brand-wrap">
+          <div class="brand-logo" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9 3v2H7a2 2 0 0 0-2 2v2H3v2h2v2H3v2h2v2a2 2 0 0 0 2 2h2v2h2v-2h2v2h2v-2h2a2 2 0 0 0 2-2v-2h2v-2h-2v-2h2V9h-2V7a2 2 0 0 0-2-2h-2V3h-2v2h-2V3H9zm0 6h6v6H9V9z"/>
+            </svg>
+          </div>
+          <h1 class="brand-title">Caventus</h1>
+        </div>
+        <span class="device-pill" id="device-pill">oriole · GS101</span>
+        <button class="icon-btn" id="btn-refresh" type="button" title="Refresh" aria-label="Refresh">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <!-- ==================== HOME PAGE ==================== -->
+      <section class="page active" id="page-home">
+        <div class="hero-card">
+          <div class="hero-top">
+            <div>
+              <div class="hero-eyebrow" data-i18n="hero_eyebrow">MEMORI PERANGKAT</div>
+              <h2 class="hero-headline" id="hero-avail">— MB <span style="font-size:0.9rem;font-weight:500;opacity:0.8">Avail</span></h2>
+              <p class="hero-sub" id="hero-sub">MemTotal — · Kernel —</p>
+            </div>
+            <span class="status-chip" id="hero-status-chip">zstd · 4 GB</span>
+          </div>
+
+          <div class="meter-block">
+            <div class="meter-labels">
+              <span data-i18n="ram_pressure">Pemakaian RAM Fisik</span>
+              <strong id="ram-meter-text">— / — MB</strong>
+            </div>
+            <div class="meter-track">
+              <div class="meter-fill" id="ram-meter-fill" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="meter-block">
+            <div class="meter-labels">
+              <span data-i18n="zram_usage">Swap zRAM Terpakai</span>
+              <strong id="zram-meter-text">— / — MB</strong>
+            </div>
+            <div class="meter-track">
+              <div class="meter-fill meter-fill--secondary" id="zram-meter-fill" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tile-grid">
+          <div class="stat-tile">
+            <span class="stat-tile__label" data-i18n="tile_ratio">Rasio Kompresi zRAM</span>
+            <span class="stat-tile__value" id="tile-ratio">—</span>
+            <span class="stat-tile__hint" id="tile-algo">algo: —</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-tile__label" data-i18n="tile_art">ART dex2oat Filter</span>
+            <span class="stat-tile__value" id="tile-art">—</span>
+            <span class="stat-tile__hint" id="tile-madvise">madvise: —</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-tile__label" data-i18n="tile_lmkd">LMKD PSI / Thrash</span>
+            <span class="stat-tile__value" id="tile-lmkd">—</span>
+            <span class="stat-tile__hint" id="tile-swaplow">swap_low: —</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-tile__label" data-i18n="tile_vm">VM Swappiness / MGLRU</span>
+            <span class="stat-tile__value" id="tile-vm">—</span>
+            <span class="stat-tile__hint" id="tile-mglru">mglru: —</span>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title" data-i18n="quick_actions">Aksi Cepat</h3>
+            <p class="section-desc" data-i18n="quick_actions_desc">Jalankan langsung di perangkat tanpa menunggu reboot.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--clickable" id="qa-compact">
+              <div class="m3-icon-badge">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M4 19h16v2H4v-2zm0-16h16v2H4V3zm7 6.41L8.41 12 7 10.59 12 5.59l5 5L15.59 12 13 9.41V15h-2V9.41z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="qa_compact_title">Compact zRAM + Reinit LMKD</span>
+                <span class="m3-row__sub" data-i18n="qa_compact_sub">Padatkan halaman zRAM & segarkan daemon LMKD</span>
+              </div>
+              <span class="m3-value-pill" data-i18n="btn_run">Run</span>
+            </div>
+
+            <div class="m3-row m3-row--clickable" id="qa-recompile">
+              <div class="m3-icon-badge m3-icon-badge--tertiary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="qa_recomp_title">Recompile Aplikasi (speed-profile)</span>
+                <span class="m3-row__sub" data-i18n="qa_recomp_sub">Paksa turun dari 'everything' ke 'speed-profile' (-f)</span>
+              </div>
+              <span class="m3-value-pill" data-i18n="btn_execute">Execute</span>
+            </div>
+
+            <div class="m3-row m3-row--clickable" id="qa-apply">
+              <div class="m3-icon-badge m3-icon-badge--secondary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="qa_apply_title">Terapkan Tuning Aktif</span>
+                <span class="m3-row__sub" data-i18n="qa_apply_sub">Sinkronkan VM, MGLRU, LMKD & zRAM (aman OOM)</span>
+              </div>
+              <span class="m3-value-pill">Apply</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TUNING PAGE ==================== -->
+      <section class="page" id="page-tuning">
+        <!-- Preset Profiles -->
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title" data-i18n="preset_title">Profil Optimasi Pixel 6</h3>
+            <p class="section-desc" data-i18n="preset_desc">Pilih baseline cepat lalu sesuaikan parameter di bawah.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <div class="chip-row" id="preset-chips">
+                <button class="m3-chip" data-preset="balanced" type="button">Balanced (Default)</button>
+                <button class="m3-chip" data-preset="container" type="button">Heavy / DroidSpaces</button>
+                <button class="m3-chip" data-preset="battery" type="button">Battery Saver</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- zRAM Section -->
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title">zRAM &amp; Swap</h3>
+            <p class="section-desc" data-i18n="zram_desc">Ukuran dan kompresor /dev/block/zram0 (writeback-safe).</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-icon-badge">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M2 20h20v-4H2v4zm2-3h2v2H4v-2zM2 4v4h20V4H2zm4 3H4V5h2v2zm-4 7h20v-4H2v4zm2-3h2v2H4v-2z"/></svg>
+                </div>
+                <div class="m3-row__content">
+                  <span class="m3-row__title" data-i18n="zram_size_label">Ukuran zRAM</span>
+                  <span class="m3-row__sub" data-i18n="zram_size_sub">Pixel 6 (8 GB) optimal di 4096 MB – 5120 MB</span>
+                </div>
+                <span class="m3-value-pill" id="val-ZRAM_SIZE_MB">4096 MB</span>
+              </div>
+              <input class="m3-slider" type="range" id="cfg-ZRAM_SIZE_MB" min="1024" max="6144" step="512" value="4096" />
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-icon-badge m3-icon-badge--secondary">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11h-1V3c0-1.1-.9-2-2-2h-2c-1.1 0-2 .9-2 2v8H8c-2.76 0-5 2.24-5 5v7h18v-7c0-2.76-2.24-5-5-5zm3 10h-2v-3c0-.55-.45-1-1-1s-1 .45-1 1v3h-2v-3c0-.55-.45-1-1-1s-1 .45-1 1v3H9v-3c0-.55-.45-1-1-1s-1 .45-1 1v3H5v-5c0-1.65 1.35-3 3-3h8c1.65 0 3 1.35 3 3v5z"/></svg>
+                </div>
+                <div class="m3-row__content">
+                  <span class="m3-row__title" data-i18n="zram_algo_label">Algoritma Kompresi</span>
+                  <span class="m3-row__sub" data-i18n="zram_algo_sub">zstd paling padat; lz4/lz77eh paling ringan CPU</span>
+                </div>
+              </div>
+              <div class="chip-row" id="chips-ZRAM_ALGO">
+                <button class="m3-chip" data-val="zstd" type="button">zstd</button>
+                <button class="m3-chip" data-val="lz4" type="button">lz4</button>
+                <button class="m3-chip" data-val="lzo-rle" type="button">lzo-rle</button>
+                <button class="m3-chip" data-val="lz77eh" type="button">lz77eh</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ART Section -->
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title">ART / dex2oat</h3>
+            <p class="section-desc" data-i18n="art_desc">Kontrol kompilasi aplikasi dan ukuran mmap odex/vdex.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-icon-badge m3-icon-badge--tertiary">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
+                </div>
+                <div class="m3-row__content">
+                  <span class="m3-row__title">dex2oat Filter</span>
+                  <span class="m3-row__sub" data-i18n="art_filter_sub">speed-profile menghemat RAM mmap dibanding everything</span>
+                </div>
+              </div>
+              <div class="chip-row" id="chips-ART_DEX2OAT_FILTER">
+                <button class="m3-chip" data-val="speed-profile" type="button">speed-profile</button>
+                <button class="m3-chip" data-val="speed" type="button">speed</button>
+                <button class="m3-chip" data-val="quicken" type="button">quicken</button>
+                <button class="m3-chip" data-val="verify" type="button">verify</button>
+              </div>
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-icon-badge">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm1 7V3.5L18.5 9H15z"/></svg>
+                </div>
+                <div class="m3-row__content">
+                  <span class="m3-row__title">madvise odex/vdex Limit</span>
+                  <span class="m3-row__sub" data-i18n="art_madvise_sub">Batas prefetch mmap file bytecode (default stok 100 MB)</span>
+                </div>
+                <span class="m3-value-pill" id="val-ART_MADVISE_MB">32 MB</span>
+              </div>
+              <input class="m3-slider" type="range" id="cfg-ART_MADVISE_MB" min="8" max="128" step="8" value="32" />
+            </div>
+          </div>
+        </div>
+
+        <!-- LMKD Section -->
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title">LMKD (Low Memory Killer)</h3>
+            <p class="section-desc" data-i18n="lmkd_desc">Tuning PSI agar app cached dibersihkan sebelum zRAM penuh.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row">
+              <div class="m3-icon-badge m3-icon-badge--error">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title">PSI Memory Monitoring</span>
+                <span class="m3-row__sub">ro.lmk.use_psi</span>
+              </div>
+              <label class="m3-switch">
+                <input type="checkbox" id="cfg-LMKD_USE_PSI" checked />
+                <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
+              </label>
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title">PSI Partial Stall</span>
+                  <span class="m3-row__sub">ro.lmk.psi_partial_stall_ms (lebih kecil = lebih responsif)</span>
+                </div>
+                <span class="m3-value-pill" id="val-LMKD_PSI_PARTIAL_MS">50 ms</span>
+              </div>
+              <input class="m3-slider" type="range" id="cfg-LMKD_PSI_PARTIAL_MS" min="20" max="150" step="5" value="50" />
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title">Thrashing Limit</span>
+                  <span class="m3-row__sub">ro.lmk.thrashing_limit</span>
+                </div>
+                <span class="m3-value-pill" id="val-LMKD_THRASHING_LIMIT">60</span>
+              </div>
+              <input class="m3-slider" type="range" id="cfg-LMKD_THRASHING_LIMIT" min="20" max="150" step="5" value="60" />
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title">Swap Free Low Threshold</span>
+                  <span class="m3-row__sub">ro.lmk.swap_free_low_percentage</span>
+                </div>
+                <span class="m3-value-pill" id="val-LMKD_SWAP_FREE_LOW_PCT">20%</span>
+              </div>
+              <input class="m3-slider" type="range" id="cfg-LMKD_SWAP_FREE_LOW_PCT" min="5" max="40" step="1" value="20" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Kernel VM & MGLRU Section -->
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title">Kernel VM &amp; MGLRU</h3>
+            <p class="section-desc" data-i18n="vm_desc">Parameter sysctl memori kernel Linux 6.1 GS101.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title">vm.swappiness</span>
+                  <span class="m3-row__sub" data-i18n="swappiness_sub">Prioritas kompresi halaman anon ke zRAM</span>
+                </div>
+                <span class="m3-value-pill" id="val-VM_SWAPPINESS">80</span>
+              </div>
+              <input class="m3-slider" type="range" id="cfg-VM_SWAPPINESS" min="20" max="150" step="5" value="80" />
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title">vm.watermark_scale_factor</span>
+                  <span class="m3-row__sub" data-i18n="wm_sub">Headroom kswapd sebelum RAM benar-benar sesak</span>
+                </div>
+                <span class="m3-value-pill" id="val-VM_WATERMARK_SCALE_FACTOR">60</span>
+              </div>
+              <input class="m3-slider" type="range" id="cfg-VM_WATERMARK_SCALE_FACTOR" min="20" max="150" step="5" value="60" />
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title">vm.vfs_cache_pressure</span>
+                  <span class="m3-row__sub">Reclaim dentry/inode cache (100 = seimbang)</span>
+                </div>
+                <span class="m3-value-pill" id="val-VM_VFS_CACHE_PRESSURE">100</span>
+              </div>
+              <input class="m3-slider" type="range" id="cfg-VM_VFS_CACHE_PRESSURE" min="50" max="200" step="10" value="100" />
+            </div>
+
+            <div class="m3-row">
+              <div class="m3-icon-badge m3-icon-badge--secondary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title">Multi-Gen LRU (MGLRU)</span>
+                <span class="m3-row__sub">/sys/kernel/mm/lru_gen/enabled</span>
+              </div>
+              <label class="m3-switch">
+                <input type="checkbox" id="cfg-MGLRU_ENABLED" checked />
+                <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TOOLS PAGE ==================== -->
+      <section class="page" id="page-tools">
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title" data-i18n="recomp_studio">ART Recompile Studio</h3>
+            <p class="section-desc" data-i18n="recomp_studio_desc">Paksa aplikasi yang terlanjur dikompilasi 'everything' agar beralih ke 'speed-profile' (-f) dengan progres live.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-icon-badge m3-icon-badge--tertiary">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+                </div>
+                <div class="m3-row__content">
+                  <span class="m3-row__title" data-i18n="recomp_scope_title">Cakupan Paket</span>
+                  <span class="m3-row__sub" data-i18n="recomp_scope_sub">Semua paket atau aplikasi pengguna saja (-3)</span>
+                </div>
+              </div>
+              <div class="chip-row" id="chips-RECOMPILE_SCOPE">
+                <button class="m3-chip" data-val="all" type="button" data-i18n="scope_all">Semua Paket</button>
+                <button class="m3-chip" data-val="third_party" type="button" data-i18n="scope_user">Aplikasi User (-3)</button>
+              </div>
+            </div>
+
+            <div class="m3-row">
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="recomp_reset_title">Reset ART Sebelum Compile (--reset)</span>
+                <span class="m3-row__sub" data-i18n="recomp_reset_sub">Hapus sisa .odex/.art lama lebih agresif sebelum -m speed-profile -f</span>
+              </div>
+              <label class="m3-switch">
+                <input type="checkbox" id="opt-recompile-reset" />
+                <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
+              </label>
+            </div>
+
+            <div class="m3-row">
+              <button class="btn-pill btn-pill--full" id="btn-run-recompile" type="button">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                <span data-i18n="btn_run_recompile">Jalankan Recompile Sekarang</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title" data-i18n="action_mode_title">Tombol Run / Action di KernelSU Manager</h3>
+            <p class="section-desc" data-i18n="action_mode_desc">Atur apa yang dijalankan saat menekan tombol Action (Run/Execute) pada kartu modul Caventus di KernelSU.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <div class="chip-row" id="chips-ACTION_MODE">
+                <button class="m3-chip" data-val="both" type="button">Compact + Recompile</button>
+                <button class="m3-chip" data-val="recompile" type="button">Recompile Only</button>
+                <button class="m3-chip" data-val="compact" type="button">Compact Only</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title" data-i18n="logs_title">Log Runtime Caventus</h3>
+            <p class="section-desc">/data/adb/caventus/caventus.log</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <pre class="terminal" id="log-terminal">Memuat log...</pre>
+              <div class="btn-row">
+                <button class="btn-pill btn-pill--tonal" id="btn-refresh-logs" type="button" data-i18n="btn_refresh_logs">Muat Ulang Log</button>
+                <button class="btn-pill btn-pill--error" id="btn-clear-logs" type="button" data-i18n="btn_clear_logs">Hapus Log</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== SETTINGS PAGE ==================== -->
+      <section class="page" id="page-settings">
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title" data-i18n="theme_title">Tema Material 3 Expressive</h3>
+            <p class="section-desc" data-i18n="theme_desc">Palet warna tonal terinspirasi dari Specter.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title" data-i18n="theme_mode_label">Mode Tampilan</span>
+                  <span class="m3-row__sub">Auto · Light · Dark · AMOLED</span>
+                </div>
+              </div>
+              <div class="chip-row" id="theme-mode-chips">
+                <button class="m3-chip" data-mode="auto" type="button">Auto</button>
+                <button class="m3-chip" data-mode="light" type="button">Light</button>
+                <button class="m3-chip" data-mode="dark" type="button">Dark</button>
+                <button class="m3-chip" data-mode="amoled" type="button">AMOLED</button>
+              </div>
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title" data-i18n="theme_accent_label">Warna Aksen</span>
+                  <span class="m3-row__sub" data-i18n="theme_accent_sub">9 palet tonal dinamis</span>
+                </div>
+              </div>
+              <div class="swatch-grid" id="accent-swatches"></div>
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-row__content">
+                  <span class="m3-row__title" data-i18n="lang_label">Bahasa / Language</span>
+                </div>
+              </div>
+              <div class="chip-row" id="lang-chips">
+                <button class="m3-chip" data-lang="id" type="button">Indonesia</button>
+                <button class="m3-chip" data-lang="en" type="button">English</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title" data-i18n="module_mgmt">Manajemen Modul</h3>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--clickable" id="btn-reset-defaults">
+              <div class="m3-icon-badge m3-icon-badge--error">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="reset_title">Reset ke Default Pixel 6 (oriole)</span>
+                <span class="m3-row__sub" data-i18n="reset_sub">Kembalikan zRAM 4 GB zstd, speed-profile & PSI LMKD standar</span>
+              </div>
+            </div>
+
+            <div class="m3-row">
+              <div class="m3-icon-badge m3-icon-badge--secondary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title">Caventus v1.1.0</span>
+                <span class="m3-row__sub">id: caventus_oriole_ram · by aryarifki · overlay-free</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Floating Unsaved Changes Action Dock -->
+    <div class="save-dock" id="save-dock">
+      <span class="save-dock__text" id="save-dock-text" data-i18n="unsaved_changes">Perubahan belum disimpan</span>
+      <div class="save-dock__actions">
+        <button class="btn-pill btn-pill--tonal" id="btn-discard" type="button" data-i18n="btn_discard">Batal</button>
+        <button class="btn-pill" id="btn-save-apply" type="button" data-i18n="btn_save_apply">Simpan &amp; Terapkan</button>
+      </div>
+    </div>
+
+    <!-- Floating Expressive Bottom Pill Nav Bar -->
+    <nav class="nav-bar" id="nav-bar" aria-label="Primary">
+      <div class="nav-indicator" id="nav-indicator"></div>
+      <button class="nav-tab nav-tab--active" data-page="home" type="button">
+        <span class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+        </span>
+        <span class="nav-label" data-i18n="nav_home">Home</span>
+      </button>
+      <button class="nav-tab" data-page="tuning" type="button">
+        <span class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+        </span>
+        <span class="nav-label" data-i18n="nav_tuning">Tuning</span>
+      </button>
+      <button class="nav-tab" data-page="tools" type="button">
+        <span class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>
+        </span>
+        <span class="nav-label" data-i18n="nav_tools">Tools</span>
+      </button>
+      <button class="nav-tab" data-page="settings" type="button">
+        <span class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+        </span>
+        <span class="nav-label" data-i18n="nav_settings">Settings</span>
+      </button>
+    </nav>
+
+    <!-- Live Streaming Recompile Modal Sheet -->
+    <div class="modal-backdrop" id="recompile-modal">
+      <div class="modal-sheet">
+        <div class="modal-header">
+          <h3 class="modal-title" id="recomp-modal-title">ART Recompile (speed-profile)</h3>
+          <span class="m3-value-pill" id="recomp-progress-pill">0 / 0</span>
+        </div>
+        <div class="meter-track">
+          <div class="meter-fill" id="recomp-progress-bar" style="width: 0%"></div>
+        </div>
+        <pre class="terminal" id="recomp-terminal">Memulai proses...</pre>
+        <div class="btn-row">
+          <button class="btn-pill btn-pill--tonal" id="btn-copy-recomp" type="button" data-i18n="btn_copy">Salin Output</button>
+          <button class="btn-pill" id="btn-close-recomp" type="button" disabled data-i18n="btn_close">Tutup</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Snackbar -->
+    <div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

@@ -36,6 +36,9 @@ def build_zip() -> tuple[Path, Path]:
         raise ValueError(f"Invalid version in module.prop: {version!r}")
 
     DIST_DIR.mkdir(parents=True, exist_ok=True)
+    for old in DIST_DIR.glob("caventus-oriole-*.zip*"):
+        old.unlink()
+
     zip_path = DIST_DIR / f"caventus-oriole-{version}.zip"
     sha_path = DIST_DIR / f"caventus-oriole-{version}.zip.sha256"
 

@@ -42,10 +42,13 @@ set_perm "$MODPATH/service.sh" 0 0 0755
 set_perm "$MODPATH/action.sh" 0 0 0755
 set_perm "$MODPATH/uninstall.sh" 0 0 0755
 set_perm "$MODPATH/bin/caventus-ctl.sh" 0 0 0755
+[ -d "$MODPATH/webroot" ] && set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
 
 ui_print "----------------------------------------------"
 ui_print "- Installed cleanly (overlay-free, no /system)."
-ui_print "- Reboot to apply 4 GB zstd zRAM, LMKD & ART."
-ui_print "- Optional (while charging): run"
-ui_print "  su -c \"/data/adb/modules/caventus_oriole_ram/bin/caventus-ctl.sh recompile\""
+ui_print "- Open KernelSU Manager -> WebUI to customize"
+ui_print "  zRAM, LMKD, VM/MGLRU & run ART recompile."
+ui_print "- Or tap Action (Run) in KernelSU Manager to"
+ui_print "  run zRAM compact + ART speed-profile recompile."
+ui_print "- Reboot to apply all boot-time optimizations."
 ui_print "=============================================="

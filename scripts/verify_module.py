@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Verification suite for Caventus Pixel 6 (oriole) KernelSU module."""
+"""Verification suite for Caventus Pixel 6 (oriole) KernelSU module + WebUI."""
 
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,6 +51,21 @@ def check_shell_syntax() -> None:
     print(f"PASS: sh -n syntax ({len(scripts)} scripts)")
 
 
+def check_js_syntax() -> None:
+    js_files = sorted((MODULE_DIR / "webroot" / "js").glob("*.js"))
+    assert len(js_files) == 4, f"Expected 4 JS files, found {len(js_files)}"
+    for js in js_files:
+        res = subprocess.run(
+            ["node", "--input-type=module", "--check"],
+            input=js.read_text(encoding="utf-8"),
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode != 0:
+            raise AssertionError(f"node --check failed for {js.name}: {res.stderr}")
+    print(f"PASS: JS ES module syntax ({len(js_files)} files)")
+
+
 def check_module_prop() -> str:
     lines = (MODULE_DIR / "module.prop").read_text(encoding="utf-8").splitlines()
     props = {}
@@ -60,6 +77,8 @@ def check_module_prop() -> str:
     missing = REQUIRED_PROP_KEYS - set(props)
     assert not missing, f"Missing module.prop keys: {missing}"
     assert props["id"] == "caventus_oriole_ram"
+    assert props["version"] == "v1.1.0"
+    assert props["versionCode"] == "110"
     print(f"PASS: module.prop ({props['id']} {props['version']})")
     return props["version"]
 
@@ -82,36 +101,59 @@ def check_system_prop() -> None:
 
 def check_shell_unit_tests() -> None:
     ctl = MODULE_DIR / "bin" / "caventus-ctl.sh"
-    test_script = f"""
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as tmpdir:
+        sb = Path(tmpdir)
+        (sb / "mod").mkdir()
+        test_script = f"""
 set -eu
 export CAVENTUS_SOURCE_ONLY=1
 . "{ctl}"
 
-# Test 1: pick_zram_algo chooses zstd when available
-got=$(pick_zram_algo "zstd" "zstd lz4 lzo-rle lzo [lz77eh]")
-[ "$got" = "zstd" ]
+# 1. pick_zram_algo
+[ "$(pick_zram_algo "zstd" "zstd lz4 lzo-rle lzo [lz77eh]")" = "zstd" ]
+[ "$(pick_zram_algo "zstd" "lz4 lzo-rle [lzo]")" = "lz4" ]
+if pick_zram_algo "zstd" "unknown_algo" >/dev/null 2>&1; then exit 1; fi
 
-# Test 2: fallback to lz4 if zstd unavailable
-got=$(pick_zram_algo "zstd" "lz4 lzo-rle [lzo]")
-[ "$got" = "lz4" ]
-
-# Test 3: return non-zero when no known algo exists
-if pick_zram_algo "zstd" "unknown_algo" >/dev/null 2>&1; then
-  exit 1
-fi
-
-# Test 4: can_safely_swapoff allows swapoff with plenty of headroom (300MB vs 3000MB)
+# 2. can_safely_swapoff
 can_safely_swapoff 307200 3072000 80
+if can_safely_swapoff 2764800 1254016 80; then exit 1; fi
 
-# Test 5: can_safely_swapoff blocks swapoff under live Pixel 6 pressure (2700MB vs 1254MB)
-if can_safely_swapoff 2764800 1254016 80; then
-  exit 1
-fi
+# 3. validate_config_kv whitelist & injection guard
+validate_config_kv ZRAM_SIZE_MB 4096
+validate_config_kv ZRAM_ALGO zstd
+validate_config_kv ART_DEX2OAT_FILTER speed-profile
+validate_config_kv ACTION_MODE both
+if validate_config_kv ZRAM_SIZE_MB "4096; id" >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv ZRAM_SIZE_MB 99999 >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv ZRAM_ALGO badalgo >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv UNKNOWN_KEY 1 >/dev/null 2>&1; then exit 1; fi
+
+# 4. Sandbox save-config + sync_system_prop
+export CAVENTUS_SOURCE_ONLY=0
+export CAVENTUS_MODDIR="{sb}/mod"
+export CAVENTUS_CONFIG_ENV="{sb}/config.env"
+export CAVENTUS_LOG_FILE="{sb}/caventus.log"
+export CAVENTUS_LOCK_FILE="{sb}/recompile.lock"
+
+sh "{ctl}" save-config ZRAM_SIZE_MB=5120 ART_DEX2OAT_FILTER=speed LMKD_PSI_PARTIAL_MS=40 >/dev/null
+grep -q '^ZRAM_SIZE_MB=5120$' "{sb}/config.env"
+grep -q '^dalvik.vm.dex2oat-filter=speed$' "{sb}/mod/system.prop"
+grep -q '^ro.lmk.psi_partial_stall_ms=40$' "{sb}/mod/system.prop"
+
+# 5. status-json emits valid JSON
+sh "{ctl}" status-json > "{sb}/status.json"
 """
-    res = subprocess.run(["sh", "-c", test_script], capture_output=True, text=True)
-    if res.returncode != 0:
-        raise AssertionError(f"Shell unit tests failed:\nSTDOUT:{res.stdout}\nSTDERR:{res.stderr}")
-    print("PASS: shell unit tests (algo selection, fallback, swapoff OOM guard)")
+        res = subprocess.run(["sh", "-c", test_script], capture_output=True, text=True)
+        if res.returncode != 0:
+            raise AssertionError(f"Shell unit tests failed:\nSTDOUT:{res.stdout}\nSTDERR:{res.stderr}")
+
+        status_data = json.loads((sb / "status.json").read_text(encoding="utf-8"))
+        for key in ("device", "ram", "zram", "vm", "lmkd", "art", "config"):
+            assert key in status_data, f"Missing key {key} in status-json"
+        assert status_data["config"]["ZRAM_SIZE_MB"] == 5120
+        assert status_data["config"]["ART_DEX2OAT_FILTER"] == "speed"
+
+    print("PASS: shell unit tests (zram, swapoff guard, config validator, sync_system_prop, status-json)")
 
 
 def check_zip_artifact(version: str) -> None:
@@ -125,6 +167,16 @@ def check_zip_artifact(version: str) -> None:
         for p in MODULE_DIR.rglob("*")
         if p.is_file()
     }
+    required_webui = {
+        "webroot/index.html",
+        "webroot/css/app.css",
+        "webroot/js/presets.js",
+        "webroot/js/theme.js",
+        "webroot/js/bridge.js",
+        "webroot/js/app.js",
+    }
+    assert required_webui.issubset(expected_entries), "Missing webroot files"
+
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = set(zf.namelist())
         assert names == expected_entries, f"Zip mismatch: extra={names - expected_entries}, missing={expected_entries - names}"
@@ -144,6 +196,7 @@ def check_zip_artifact(version: str) -> None:
 def main() -> int:
     check_lf_line_endings()
     check_shell_syntax()
+    check_js_syntax()
     version = check_module_prop()
     check_system_prop()
     check_shell_unit_tests()
