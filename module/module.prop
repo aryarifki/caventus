@@ -1,0 +1,6 @@
+id=caventus_oriole_ram
+name=Caventus — Pixel 6 (oriole) RAM Optimizer
+version=v1.0.0
+versionCode=100
+author=aryarifki
+description=Pixel 6 (oriole/gs101) memory optimizer: 4 GB zstd zRAM (writeback-safe), ART speed-profile, PSI LMKD + lmkd.reinit, and VM/MGLRU tuning.

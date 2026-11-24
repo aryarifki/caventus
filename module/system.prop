@@ -1,0 +1,24 @@
+# === Caventus: Pixel 6 (oriole / GS101) Memory Optimization ===
+
+# 1. ART / dex2oat — revert 'everything' mmap bloat to profile-guided compilation
+dalvik.vm.dex2oat-filter=speed-profile
+dalvik.vm.image-dex2oat-filter=speed-profile
+pm.dexopt.install=speed-profile
+pm.dexopt.bg-dexopt=speed-profile
+pm.dexopt.shared=speed
+dalvik.vm.madvise.odexfile.size=33554432
+dalvik.vm.madvise.vdexfile.size=33554432
+
+# 2. LMKD — PSI-based tuning for 8 GB Pixel 6 (with Native/DroidSpaces headroom)
+ro.lmk.use_psi=true
+ro.lmk.use_minfree_levels=false
+ro.lmk.psi_partial_stall_ms=50
+ro.lmk.psi_complete_stall_ms=500
+ro.lmk.thrashing_limit=60
+ro.lmk.thrashing_limit_decay=15
+ro.lmk.swap_free_low_percentage=20
+ro.lmk.swap_util_max=85
+ro.lmk.kill_heaviest_task=true
+ro.lmk.kill_timeout_ms=100
+ro.lmk.downgrade_pressure=60
+ro.lmk.debug=false

@@ -1,0 +1,30 @@
+name: Build & Verify Caventus Module
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build flashable zip and verify module
+        run: |
+          python3 scripts/build_zip.py
+          python3 scripts/verify_module.py
+
+      - name: Upload flashable module artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: caventus-oriole-module
+          path: dist/*
+          if-no-files-found: error
