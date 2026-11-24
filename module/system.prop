@@ -1,4 +1,5 @@
 # === Caventus: Pixel 6 (oriole / GS101) Memory Optimization ===
+# Boot-safe Oriole Optimal defaults (SF_TUNING_MODE=off)
 
 # 1. ART / dex2oat — revert 'everything' mmap bloat to profile-guided compilation
 dalvik.vm.dex2oat-filter=speed-profile
@@ -26,10 +27,4 @@ ro.lmk.debug=false
 # 3. Android 16/17 mmd zRAM boot sync
 mmd.zram.enabled=true
 mmd.zram.size=4294967296
-mmd.zram.comp_algorithm=zstd
-
-# 4. SurfaceFlinger — Graphics RAM & latency (ram_safe)
-ro.surface_flinger.clear_slots_with_set_layer_buffer=true
-ro.surface_flinger.use_context_priority=true
-ro.surface_flinger.force_hwc_copy_for_virtual_displays=true
-ro.surface_flinger.running_without_sync_framework=false
+mmd.zram.comp_algorithm=lz77eh

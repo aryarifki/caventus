@@ -38,7 +38,7 @@
               <h2 class="hero-headline" id="hero-avail">— MB <span style="font-size:0.9rem;font-weight:500;opacity:0.8">Avail</span></h2>
               <p class="hero-sub" id="hero-sub">MemTotal — · Kernel —</p>
             </div>
-            <span class="status-chip" id="hero-status-chip">zstd · 4 GB</span>
+            <span class="status-chip" id="hero-status-chip">lz77eh · 4 GB</span>
           </div>
 
           <div class="meter-block">
@@ -148,7 +148,7 @@
           <div class="m3-group">
             <div class="m3-row m3-row--stacked">
               <div class="chip-row" id="preset-chips">
-                <button class="m3-chip" data-preset="balanced" type="button">Balanced (Default)</button>
+                <button class="m3-chip" data-preset="balanced" type="button">Oriole Optimal (Default)</button>
                 <button class="m3-chip" data-preset="container" type="button">Heavy / DroidSpaces</button>
                 <button class="m3-chip" data-preset="ptune" type="button">Pixel Tune (GS101)</button>
                 <button class="m3-chip" data-preset="battery" type="button">Battery Saver</button>
@@ -185,7 +185,7 @@
                 </div>
                 <div class="m3-row__content">
                   <span class="m3-row__title" data-i18n="zram_algo_label">Algoritma Kompresi</span>
-                  <span class="m3-row__sub" data-i18n="zram_algo_sub">zstd paling padat; lz4/lz77eh paling ringan CPU</span>
+                  <span class="m3-row__sub" data-i18n="zram_algo_sub">lz77eh offload HW GS101 (hemat CPU/baterai); zstd paling padat</span>
                 </div>
               </div>
               <div class="chip-row" id="chips-ZRAM_ALGO">
@@ -330,9 +330,9 @@
                   <span class="m3-row__title">vm.watermark_scale_factor</span>
                   <span class="m3-row__sub" data-i18n="wm_sub">Headroom kswapd sebelum RAM benar-benar sesak</span>
                 </div>
-                <span class="m3-value-pill" id="val-VM_WATERMARK_SCALE_FACTOR">60</span>
+                <span class="m3-value-pill" id="val-VM_WATERMARK_SCALE_FACTOR">65</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-VM_WATERMARK_SCALE_FACTOR" min="20" max="150" step="5" value="60" />
+              <input class="m3-slider" type="range" id="cfg-VM_WATERMARK_SCALE_FACTOR" min="20" max="150" step="5" value="65" />
             </div>
 
             <div class="m3-row m3-row--stacked">
@@ -459,11 +459,11 @@
               <div class="m3-row__top">
                 <div class="m3-row__content">
                   <span class="m3-row__title">UFS nr_requests &amp; async_depth</span>
-                  <span class="m3-row__sub" data-i18n="nr_sub">Kedalaman antrean I/O UFS 3.1 (default stok 128)</span>
+                  <span class="m3-row__sub" data-i18n="nr_sub">Kedalaman antrean I/O UFS 3.1 (default optimal 128)</span>
                 </div>
-                <span class="m3-value-pill" id="val-IO_NR_REQUESTS">256</span>
+                <span class="m3-value-pill" id="val-IO_NR_REQUESTS">128</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-IO_NR_REQUESTS" min="64" max="512" step="64" value="256" />
+              <input class="m3-slider" type="range" id="cfg-IO_NR_REQUESTS" min="64" max="512" step="64" value="128" />
             </div>
 
             <div class="m3-row m3-row--stacked">
@@ -507,7 +507,7 @@
               <div class="m3-row__top">
                 <div class="m3-row__content">
                   <span class="m3-row__title" data-i18n="sf_mode_label">Mode SurfaceFlinger</span>
-                  <span class="m3-row__sub" data-i18n="sf_mode_sub">ram_safe aktifkan clear_slots; ptune tambah 6 FB buffers &amp; ADPF 1KHz</span>
+                  <span class="m3-row__sub" data-i18n="sf_mode_sub">off paling aman saat boot; ram_safe aktifkan clear_slots; ptune +6 FB &amp; ADPF 1KHz</span>
                 </div>
               </div>
               <div class="chip-row" id="chips-SF_TUNING_MODE">
@@ -677,7 +677,7 @@
               </div>
               <div class="m3-row__content">
                 <span class="m3-row__title" data-i18n="reset_title">Reset ke Default Pixel 6 (oriole)</span>
-                <span class="m3-row__sub" data-i18n="reset_sub">Kembalikan zRAM 4 GB zstd, speed-profile & PSI LMKD standar</span>
+                <span class="m3-row__sub" data-i18n="reset_sub">Kembalikan profil Oriole Optimal (4 GB lz77eh, speed-profile, SF off)</span>
               </div>
             </div>
 
@@ -686,7 +686,7 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
               </div>
               <div class="m3-row__content">
-                <span class="m3-row__title">Caventus v1.2.0</span>
+                <span class="m3-row__title">Caventus v1.3.0</span>
                 <span class="m3-row__sub">id: caventus_oriole_ram · by aryarifki · overlay-free · GS101</span>
               </div>
             </div>

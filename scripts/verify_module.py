@@ -30,11 +30,7 @@ REQUIRED_SYSTEM_PROPS = {
     "ro.lmk.swap_util_max": "85",
     "mmd.zram.enabled": "true",
     "mmd.zram.size": "4294967296",
-    "mmd.zram.comp_algorithm": "zstd",
-    "ro.surface_flinger.clear_slots_with_set_layer_buffer": "true",
-    "ro.surface_flinger.use_context_priority": "true",
-    "ro.surface_flinger.force_hwc_copy_for_virtual_displays": "true",
-    "ro.surface_flinger.running_without_sync_framework": "false",
+    "mmd.zram.comp_algorithm": "lz77eh",
 }
 
 
@@ -84,8 +80,8 @@ def check_module_prop() -> str:
     missing = REQUIRED_PROP_KEYS - set(props)
     assert not missing, f"Missing module.prop keys: {missing}"
     assert props["id"] == "caventus_oriole_ram"
-    assert props["version"] == "v1.2.0"
-    assert props["versionCode"] == "120"
+    assert props["version"] == "v1.3.0"
+    assert props["versionCode"] == "130"
     print(f"PASS: module.prop ({props['id']} {props['version']})")
     return props["version"]
 
@@ -103,7 +99,9 @@ def check_system_prop() -> None:
     for k, expected in REQUIRED_SYSTEM_PROPS.items():
         actual = props.get(k)
         assert actual == expected, f"system.prop {k}: expected {expected!r}, got {actual!r}"
-    print(f"PASS: system.prop ({len(props)} properties)")
+    sf_keys = [k for k in props if k.startswith("ro.surface_flinger.")]
+    assert not sf_keys, f"Default system.prop must be boot-safe without SurfaceFlinger props: {sf_keys}"
+    print(f"PASS: system.prop ({len(props)} properties, boot-safe)")
 
 
 def check_shell_unit_tests() -> None:
@@ -117,6 +115,8 @@ export CAVENTUS_SOURCE_ONLY=1
 . "{ctl}"
 
 # 1. pick_zram_algo, extract_bracketed_token & token_in_list
+[ "$(pick_zram_algo "lz77eh" "zstd lz4 lzo-rle lzo [lz77eh]")" = "lz77eh" ]
+[ "$(pick_zram_algo "lz77eh" "zstd lz4 lzo-rle")" = "zstd" ]
 [ "$(pick_zram_algo "zstd" "zstd lz4 lzo-rle lzo [lz77eh]")" = "zstd" ]
 [ "$(pick_zram_algo "zstd" "lz4 lzo-rle [lzo]")" = "lz4" ]
 if pick_zram_algo "zstd" "unknown_algo" >/dev/null 2>&1; then exit 1; fi
@@ -156,7 +156,7 @@ if validate_config_kv GPU_DVFS_PERIOD_MS 5 >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv SF_TUNING_MODE "ptune; rm" >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv UNKNOWN_KEY 1 >/dev/null 2>&1; then exit 1; fi
 
-# 4. Sandbox save-config + sync_system_prop (ptune, off, mmd_sync)
+# 4. Sandbox init-defaults + save-config + sync_system_prop (ptune, off, mmd_sync)
 export CAVENTUS_SOURCE_ONLY=0
 export CAVENTUS_MODDIR="{sb}/mod"
 export CAVENTUS_CONFIG_ENV="{sb}/config.env"
@@ -164,6 +164,14 @@ export CAVENTUS_LOG_FILE="{sb}/caventus.log"
 export CAVENTUS_LOCK_FILE="{sb}/recompile.lock"
 export CAVENTUS_WATCHDOG_PID_FILE="{sb}/watchdog.pid"
 export CAVENTUS_NO_WATCHDOG=1
+
+sh "{ctl}" init-defaults >/dev/null
+grep -q '^ZRAM_ALGO=lz77eh$' "{sb}/config.env"
+grep -q '^SF_TUNING_MODE=off$' "{sb}/config.env"
+grep -q '^VM_WATERMARK_SCALE_FACTOR=65$' "{sb}/config.env"
+grep -q '^IO_NR_REQUESTS=128$' "{sb}/config.env"
+grep -q '^mmd.zram.comp_algorithm=lz77eh$' "{sb}/mod/system.prop"
+if grep -q '^ro\\.surface_flinger\\.' "{sb}/mod/system.prop"; then exit 1; fi
 
 sh "{ctl}" save-config ZRAM_SIZE_MB=5120 ART_DEX2OAT_FILTER=speed LMKD_PSI_PARTIAL_MS=40 SCHED_PROFILE=ptune SF_TUNING_MODE=ptune IO_READ_AHEAD_KB=0 >/dev/null
 grep -q '^ZRAM_SIZE_MB=5120$' "{sb}/config.env"

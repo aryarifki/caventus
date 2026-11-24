@@ -21,21 +21,21 @@ let mockState = {
   },
   zram: {
     disksize_bytes: 4294967296,
-    active_algo: 'zstd',
-    avail_algos: '[zstd] lz4 lzo-rle lzo lz77eh',
-    backing_dev: '/dev/block/loop5',
+    active_algo: 'lz77eh',
+    avail_algos: 'zstd lz4 lzo-rle lzo [lz77eh]',
+    backing_dev: '/dev/block/loop17',
     orig_data_bytes: 2407526400,
-    compr_data_bytes: 668757333,
-    mem_used_bytes: 695120000,
+    compr_data_bytes: 859830857,
+    mem_used_bytes: 880120000,
   },
   vm: {
     swappiness: '80',
     vfs_cache_pressure: '100',
-    watermark_scale_factor: '60',
+    watermark_scale_factor: '65',
     dirty_background_ratio: '5',
     dirty_ratio: '15',
     page_cluster: '0',
-    mglru_enabled: '0x0007',
+    mglru_enabled: '0x0003',
     mglru_min_ttl_ms: '1000',
   },
   thp: {
@@ -52,13 +52,13 @@ let mockState = {
   cpufreq: {
     profile: 'responsive',
     p0_up_us: '0',
-    p0_down_us: '2000',
+    p0_down_us: '4000',
     p0_resp_ms: '4',
   },
   io: {
     scheduler: 'mq-deadline',
     read_ahead_kb: '128',
-    nr_requests: '256',
+    nr_requests: '128',
   },
   gpu: {
     power_policy: 'adaptive',
@@ -68,8 +68,8 @@ let mockState = {
     max_freq: '848000',
   },
   sf: {
-    mode: 'ram_safe',
-    clear_slots: 'true',
+    mode: 'off',
+    clear_slots: 'stock',
     max_fb_buffers: '',
   },
   lmkd: {
@@ -89,12 +89,12 @@ let mockState = {
   watchdog_running: false,
   config: {
     ZRAM_SIZE_MB: 4096,
-    ZRAM_ALGO: 'zstd',
+    ZRAM_ALGO: 'lz77eh',
     MMD_ZRAM_SYNC: 1,
     SWAPOFF_HEADROOM_PCT: 80,
     VM_SWAPPINESS: 80,
     VM_VFS_CACHE_PRESSURE: 100,
-    VM_WATERMARK_SCALE_FACTOR: 60,
+    VM_WATERMARK_SCALE_FACTOR: 65,
     VM_DIRTY_BACKGROUND_RATIO: 5,
     VM_DIRTY_RATIO: 15,
     VM_PAGE_CLUSTER: 0,
@@ -106,10 +106,10 @@ let mockState = {
     CPU_RATE_PROFILE: 'responsive',
     IO_SCHEDULER: 'mq-deadline',
     IO_READ_AHEAD_KB: 128,
-    IO_NR_REQUESTS: 256,
+    IO_NR_REQUESTS: 128,
     GPU_POWER_POLICY: 'adaptive',
     GPU_DVFS_PERIOD_MS: 20,
-    SF_TUNING_MODE: 'ram_safe',
+    SF_TUNING_MODE: 'off',
     WATCHDOG_ENABLED: 0,
     ART_DEX2OAT_FILTER: 'speed-profile',
     ART_MADVISE_MB: 32,
@@ -129,9 +129,9 @@ let mockState = {
 };
 
 let mockLogs = [
-  '[2026-11-24 22:15:02] zram0 configured: 4096 MB (4294967296B), algo=zstd, backing_dev=/dev/block/loop5',
-  '[2026-11-24 22:15:02] VM sysctls applied (swappiness=80, watermark_scale=60, dirty=5/15, mglru=1).',
-  '[2026-11-24 22:15:02] LMKD reinitialized (use_psi=true, partial_ms=50, thrash=60, swap_low=20%).',
+  '[2026-11-24 23:15:02] zram0 configured: 4096 MB (4294967296B), algo=lz77eh, backing_dev=/dev/block/loop17',
+  '[2026-11-24 23:15:02] VM sysctls applied (swappiness=80, watermark_scale=65, dirty=5/15, mglru=1).',
+  '[2026-11-24 23:15:02] LMKD reinitialized (use_psi=true, partial_ms=50, thrash=60, swap_low=20%).',
 ];
 
 export function isKsuEnvironment() {

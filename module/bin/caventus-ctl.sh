@@ -14,12 +14,12 @@ WATCHDOG_PID_FILE="${CAVENTUS_WATCHDOG_PID_FILE:-/data/adb/caventus/watchdog.pid
 
 set_defaults() {
   ZRAM_SIZE_MB=4096
-  ZRAM_ALGO=zstd
+  ZRAM_ALGO=lz77eh
   MMD_ZRAM_SYNC=1
   SWAPOFF_HEADROOM_PCT=80
   VM_SWAPPINESS=80
   VM_VFS_CACHE_PRESSURE=100
-  VM_WATERMARK_SCALE_FACTOR=60
+  VM_WATERMARK_SCALE_FACTOR=65
   VM_DIRTY_BACKGROUND_RATIO=5
   VM_DIRTY_RATIO=15
   VM_PAGE_CLUSTER=0
@@ -31,10 +31,10 @@ set_defaults() {
   CPU_RATE_PROFILE=responsive
   IO_SCHEDULER=mq-deadline
   IO_READ_AHEAD_KB=128
-  IO_NR_REQUESTS=256
+  IO_NR_REQUESTS=128
   GPU_POWER_POLICY=adaptive
   GPU_DVFS_PERIOD_MS=20
-  SF_TUNING_MODE=ram_safe
+  SF_TUNING_MODE=off
   WATCHDOG_ENABLED=0
   ART_DEX2OAT_FILTER=speed-profile
   ART_MADVISE_MB=32
@@ -451,9 +451,13 @@ apply_zram() {
   fi
 
   old_bdev=""
+  old_wb_en=""
   if [ -r "$zram_sys/backing_dev" ]; then
     old_bdev=$(cat "$zram_sys/backing_dev" 2>/dev/null || true)
     [ "$old_bdev" = "none" ] && old_bdev=""
+  fi
+  if [ -r "$zram_sys/writeback_limit_enable" ]; then
+    old_wb_en=$(cat "$zram_sys/writeback_limit_enable" 2>/dev/null || true)
   fi
 
   mkswap_cmd=$(resolve_cmd mkswap) || { log_msg "mkswap binary not found"; return 1; }
@@ -476,7 +480,13 @@ apply_zram() {
   failed=0
   write_node "$zram_sys/comp_algorithm" "$target_algo" || failed=1
   if [ "$failed" -eq 0 ] && [ -n "$old_bdev" ] && [ -e "$old_bdev" ]; then
-    write_node "$zram_sys/backing_dev" "$old_bdev" || log_msg "Note: backing_dev '$old_bdev' could not be re-attached."
+    if write_node "$zram_sys/backing_dev" "$old_bdev"; then
+      if [ "$old_wb_en" = "1" ]; then
+        write_node "$zram_sys/writeback_limit_enable" "1" || true
+      fi
+    else
+      log_msg "Note: backing_dev '$old_bdev' could not be re-attached."
+    fi
   fi
   if [ "$failed" -eq 0 ]; then
     write_node "$zram_sys/disksize" "$target_bytes" || failed=1
@@ -514,7 +524,10 @@ apply_vm() {
 
   if [ -w /sys/kernel/mm/lru_gen/enabled ]; then
     if [ "$MGLRU_ENABLED" = "1" ]; then
-      write_node /sys/kernel/mm/lru_gen/enabled "y" || true
+      _cur_mglru=$(cat /sys/kernel/mm/lru_gen/enabled 2>/dev/null || echo 0)
+      case "$_cur_mglru" in
+        0|0x0|0x0000) write_node /sys/kernel/mm/lru_gen/enabled "y" || true ;;
+      esac
     else
       write_node /sys/kernel/mm/lru_gen/enabled "0" || true
     fi
@@ -578,7 +591,7 @@ apply_sched() {
       write_node "$_vs/adpf_rampup_multiplier" "4" || true
       write_node "$_vs/auto_prefer_idle" "0" || true
       write_node "$_vs/reduce_prefer_idle" "1" || true
-      write_node "$_vs/uclamp_max_filter_enable" "1" || true
+      write_node "$_vs/uclamp_max_filter_enable" "0" || true
       set_sched_group "$_vs/groups/ta" 1 1024 1 0 0
       set_sched_group "$_vs/groups/fg" 0 1024 1 0 0
       set_sched_group "$_vs/groups/cam" 1 1024 1 0 0
@@ -656,9 +669,23 @@ apply_cpufreq() {
         write_node "$_sp/cpu_busy_limit_ms" "1" || true
         ;;
       responsive|*)
-        write_node "$_sp/up_rate_limit_us" "0" || true
-        write_node "$_sp/down_rate_limit_us" "2000" || true
-        write_node "$_sp/response_time_ms" "4" || true
+        case "$_pname" in
+          policy0)
+            write_node "$_sp/up_rate_limit_us" "0" || true
+            write_node "$_sp/down_rate_limit_us" "4000" || true
+            write_node "$_sp/response_time_ms" "4" || true
+            ;;
+          policy4)
+            write_node "$_sp/up_rate_limit_us" "250" || true
+            write_node "$_sp/down_rate_limit_us" "10000" || true
+            write_node "$_sp/response_time_ms" "16" || true
+            ;;
+          *)
+            write_node "$_sp/up_rate_limit_us" "500" || true
+            write_node "$_sp/down_rate_limit_us" "15000" || true
+            write_node "$_sp/response_time_ms" "60" || true
+            ;;
+        esac
         ;;
     esac
   done
@@ -666,6 +693,8 @@ apply_cpufreq() {
 }
 
 apply_io() {
+  _async_depth=$((IO_NR_REQUESTS / 2))
+  [ "$_async_depth" -lt 32 ] && _async_depth=32
   for _blk in /sys/block/sd*; do
     _q="$_blk/queue"
     [ -d "$_q" ] || continue
@@ -678,7 +707,7 @@ apply_io() {
     write_node "$_q/nr_requests" "$IO_NR_REQUESTS" || true
     write_node "$_q/read_ahead_kb" "$IO_READ_AHEAD_KB" || true
     write_node "$_q/iostats" "0" || true
-    write_node "$_q/iosched/async_depth" "$IO_NR_REQUESTS" || true
+    write_node "$_q/iosched/async_depth" "$_async_depth" || true
   done
   if [ -d /sys/block/zram0/queue ]; then
     write_node /sys/block/zram0/queue/read_ahead_kb "0" || true
@@ -797,6 +826,13 @@ cmd_save_config() {
   sync_system_prop
   apply_live_props
   log_msg "Saved config & synced system.prop ($# updates)."
+}
+
+cmd_init_defaults() {
+  set_defaults
+  write_config_file
+  sync_system_prop
+  log_msg "Initialized Pixel 6 (oriole) boot-safe optimal defaults."
 }
 
 cmd_reset_defaults() {
@@ -919,7 +955,8 @@ cmd_status_json() {
   _gpu_min=$(cat /sys/devices/platform/1c500000.mali/scaling_min_freq 2>/dev/null || echo "151000")
   _gpu_max=$(cat /sys/devices/platform/1c500000.mali/scaling_max_freq 2>/dev/null || echo "848000")
 
-  _sf_clear=$(getprop ro.surface_flinger.clear_slots_with_set_layer_buffer 2>/dev/null || echo "true")
+  _sf_clear=$(getprop ro.surface_flinger.clear_slots_with_set_layer_buffer 2>/dev/null || echo "")
+  [ -z "$_sf_clear" ] && _sf_clear="stock"
   _sf_bufs=$(getprop ro.surface_flinger.max_frame_buffer_acquired_buffers 2>/dev/null || echo "")
 
   _l_psi=$(getprop ro.lmk.use_psi 2>/dev/null || echo "$LMKD_USE_PSI")
@@ -1115,6 +1152,9 @@ case "$cmd" in
   save-config)
     cmd_save_config "$@"
     ;;
+  init-defaults)
+    cmd_init_defaults
+    ;;
   reset-defaults)
     cmd_reset_defaults
     ;;
@@ -1146,7 +1186,7 @@ case "$cmd" in
     cmd_watchdog_loop
     ;;
   help|-h|--help)
-    echo "Usage: $0 {apply|save-config KEY=VAL...|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset]|logs [N]|clear-logs|watchdog-start|watchdog-stop|help}"
+    echo "Usage: $0 {apply|save-config KEY=VAL...|init-defaults|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset]|logs [N]|clear-logs|watchdog-start|watchdog-stop|help}"
     ;;
   *)
     echo "Unknown command: $cmd" >&2
