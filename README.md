@@ -1,47 +1,47 @@
 # Caventus — Pixel 6 (`oriole`) KernelSU RAM Optimizer + Material 3 Expressive WebUI
 
-Modul **KernelSU** (*overlay-free*, tanpa modifikasi `/system` atau `/vendor`) yang dioptimalkan khusus untuk **Google Pixel 6 (`oriole` / Tensor GS101, 8 GB RAM)**, dilengkapi **KernelSU WebUI** bergaya **Material 3 Expressive** (terinspirasi dari [`dpejoh/specter`](https://github.com/dpejoh/specter)) untuk memantau memori secara real-time, mengkustomisasi seluruh parameter tuning, dan menjalankan **ART `speed-profile` recompile (`-f`)** langsung dari WebUI maupun tombol **Action (Run/Execute)** di KernelSU Manager.
+Modul **KernelSU** (*overlay-free*, tanpa modifikasi `/system` atau `/vendor`) yang dioptimalkan khusus untuk **Google Pixel 6 (`oriole` / Tensor GS101, 8 GB RAM)**, dilengkapi **KernelSU WebUI** bergaya **Material 3 Expressive** (terinspirasi dari [`dpejoh/specter`](https://github.com/dpejoh/specter)), **ART `speed-profile` recompile (`-f`)**, serta **Forensic Diagnostic Log Capture (`caventus-diag.sh`)** untuk merekam dan mengekspor telemetri lengkap (boot trace, `logcat`, `dmesg`, thermal, PSI, CPUFreq, zRAM/vmstat, LMKD) ke `/sdcard/Download/Caventus-Logs/`.
 
 ---
 
-## Profil Default Otomatis `v1.3.0` (*Oriole Optimal*)
+## Pembaruan Utama `v1.4.0` (Thermal-Safe, Anti-Lag & Forensic Diagnostics)
 
-Saat pertama kali modul di-flash dan perangkat di-reboot, Caventus otomatis membuat `/data/adb/caventus/config.env` dan menerapkan profil **Oriole Optimal** yang telah diaudit terhadap sysfs/procfs GS101 dan dirancang *boot-safe*:
+1. **Pencegahan `odrefresh` Recompile Saat Boot (`ART_BOOT_PROPS=0`):** `dalvik.vm.dex2oat-filter` dan `dalvik.vm.image-dex2oat-filter` tidak lagi diinjeksi ke `system.prop` secara default (karena dapat memicu `odrefresh` mengkompilasi ulang ART framework saat boot). Filter `speed-profile` diterapkan ke `pm.dexopt.install`/`bg-dexopt` dan ART Recompile Studio.
+2. **Bebas *Freeze* `swapoff` Pasca-Boot (`ZRAM_RUNTIME_RESIZE=0`):** Jika `mmd` boot-sync tidak mengubah ukuran/algoritma `zram0`, skrip runtime tidak lagi membongkar-pasang (`swapoff`/`reset`) 3–4 GB zRAM di background saat UI baru menyala.
+3. **GS101 Thermal-Safe Default (`SCHED_PROFILE=stock`, `CPU_RATE_PROFILE=stock`):** `reduce_prefer_idle=true` dan `groups/sys/prefer_idle=false` dipertahankan sesuai bawaan Pixel 6 agar thread kernel tidak membangunkan core besar dan memicu thermal throttling.
+4. **LMKD PSI Longgar (`70/700/80/10%/95%`):** Mencegah badai *kill-respawn* aplikasi latar belakang ketika RAM & zRAM padat.
+5. **Forensic Diagnostic Capture (`bin/caventus-diag.sh`):**
+   * **Otomatis saat boot (`AUTO_BOOT_DIAG=1`):** merekam `last-boot.log` (`pre`/`post` apply) dan laporan lengkap `--tag=boot`.
+   * **On-demand via WebUI (`Tools` → *Diagnostic Log Capture* / tombol cepat *Home*) atau KernelSU Action:** menghasilkan laporan 13 seksi termasuk time-series sampling (`0s` / `15s` / `30s`) yang diekspor ke `/sdcard/Download/Caventus-Logs/latest-caventus-diag.log`.
 
-| Komponen | Nilai Default (`v1.3.0`) | Alasan Teknis (Pixel 6 / GS101) |
+---
+
+## Profil Default Otomatis `v1.4.0` (*Oriole Safe & Cool*)
+
+| Komponen | Nilai Default (`v1.4.0`) | Keterangan |
 | :--- | :--- | :--- |
-| **zRAM + `mmd`** | `4096 MB`, `lz77eh`, `mmd_sync=1` | Memanfaatkan akselerator hardware Emerald Hill GS101 (`lz77eh`) dengan overhead CPU minimal; `zstd` tersedia sebagai pilihan di WebUI. |
-| **ART / `dex2oat`** | `speed-profile`, `madvise=32 MB` | Menghindari bloat mmap `everything` sekaligus memangkas prefetch odex/vdex dari 100 MB stok ke 32 MB. |
-| **LMKD (PSI)** | `use_psi=true`, `partial=50ms`, `thrashing=60`, `swap_low=20%` | Membersihkan app cached sebelum zRAM penuh tanpa mengganggu container/native workload. |
-| **Kernel VM & MGLRU** | `swappiness=80`, `watermark_scale=65`, `MGLRU=on` (`0x0003` preserved), `THP=never` | Headroom `kswapd` lebih lega dan nol pemborosan RAM internal THP. |
-| **GS101 `vendor_sched`** | `balanced` (`latency_ns=4166666`, `adpf_rampup=2`) | Membuka `sf`/`sys` tanpa membuka `uclamp_max=512` pada grup background. |
-| **GS101 `sched_pixel`** | `responsive` per-cluster (`p0=4ms`, `p4=16ms`, `p6=60ms`) | Responsif di core Little/Mid tanpa memicu throttling termal X1. |
-| **UFS 3.1 I/O & Mali** | `mq-deadline`, `read_ahead=128 KB`, `nr_requests=128`, `async_depth=64`, `adaptive`, `dvfs=20ms` | Memangkas page-cache RAM dari stok `512–1024 KB` sambil menjaga kestabilan antrean UFS. |
-| **SurfaceFlinger** | `off` (stok aman, opt-in `ram_safe`/`ptune`) | Menghilangkan risiko bootloop/flicker Composer HAL pada boot pertama (khususnya tanpa PC/recovery). |
+| **zRAM + `mmd`** | `4096 MB`, `lz77eh`, `mmd_sync=1`, `runtime_resize=0` | Hardware Emerald Hill GS101 tanpa risiko `swapoff` freeze pasca-boot. |
+| **ART / `dex2oat`** | `pm.dexopt=speed-profile`, `madvise=64 MB`, `ART_BOOT_PROPS=0` | Tanpa memicu `odrefresh` saat boot. |
+| **LMKD (PSI)** | `partial=70ms`, `complete=700ms`, `thrashing=80`, `swap_low=10%`, `swap_util=95%` | Menghindari kill berulang yang membuat app lambat dibuka. |
+| **Kernel VM & MGLRU** | `swappiness=70`, `watermark_scale=55`, `dirty=10/20`, `MGLRU=1 (0x0003)`, `THP=never` | Seimbang dan hemat RAM tanpa memicu direct reclaim / thermal tinggi. |
+| **GS101 Sched & CPUFreq** | `SCHED_PROFILE=stock`, `CPU_RATE_PROFILE=stock` | Bebas panas berlebih; profil `balanced`/`responsive` tetap tersedia opt-in. |
+| **UFS 3.1 & Mali** | `mq-deadline`, `read_ahead=256 KB`, `nr_requests=128`, `async_depth=64`, `adaptive` | `iostats` dipertahankan aktif untuk analisis diagnostik. |
+| **SurfaceFlinger** | `off` | Tidak mengubah properti Composer HAL saat boot. |
 
 ---
 
-## Fitur Utama `v1.3.0`
+## Cara Mengambil & Mengirim Log Diagnostik Lengkap
 
-* **Material 3 Expressive KSU WebUI (`webroot/`):**
-  * 4 tab dengan *floating pill navigation bar* & indikator animasi *spring*: **Home**, **Tuning**, **Tools**, **Settings**.
-  * 9 palet warna tonal Specter (`blue`, `purple`, `green`, `cyan`, `orange`, `pink`, `red`, `yellow`, `grey`) dalam mode **Auto**, **Light**, **Dark**, dan **AMOLED**.
-  * Dukungan dwibahasa (**Indonesia** & **English**) serta 4 profil preset (**Oriole Optimal**, **Heavy / DroidSpaces**, **Pixel Tune GS101**, **Battery Saver**).
-* **Kustomisasi Memori, zRAM, Scheduler, UFS & GPU:**
-  * **zRAM + Android 17 `mmd` Boot Sync:** ukuran (`1024–6144 MB`), kompresor (`lz77eh`, `zstd`, `lz4`, `lzo-rle`), **OOM guard** sebelum `swapoff`, serta preservasi `backing_dev` & `writeback_limit_enable`.
-  * **Sysfs Drift Guard (Watchdog opsional):** loop shell murni ringan (interval `300s`, default OFF) untuk menjaga node VM/sched/IO/GPU agar tidak di-reset sistem.
-* **ART Recompile Studio & Tombol Run/Execute (`action.sh`):**
-  * Memaksa aplikasi yang sebelumnya terkompilasi `everything` agar beralih ke `speed-profile` menggunakan `cmd package compile -m speed-profile -f <pkg>` (plus opsi `--reset` dan cakupan `Semua Paket` atau `Aplikasi User -3`).
+1. Flash **`caventus-oriole-v1.4.0.zip`** di **KernelSU Manager** → **Modules** → **Install**, lalu **Reboot**.
+2. Buka **KernelSU Manager** → tap **WebUI** pada Caventus → buka tab **Tools** (atau tap *Tangkap Log Diagnostik (15s)* di **Home**).
+3. Pilih durasi (**Instan 0s**, **Normal 15s**, atau **Uji Buka App 30s** sambil membuka aplikasi yang terasa lambat) → tap **Rekam & Ekspor Log Lengkap**.
+4. File laporan lengkap tersimpan di **`/sdcard/Download/Caventus-Logs/latest-caventus-diag.log`** dan bisa langsung dilihat/disalin dari modal WebUI.
 
 ---
 
-## Cara Instalasi & Pemulihan Tanpa PC (*KernelSU Safe Mode*)
+## Pemulihan Tanpa PC (*KernelSU Safe Mode*)
 
-1. Unduh **`caventus-oriole-v1.3.0.zip`** dari halaman [**Releases**](https://github.com/aryarifki/caventus/releases) (atau folder `dist/`).
-2. Buka **KernelSU Manager** → tab **Modules** → **Install** → pilih zip tersebut, lalu **Reboot**.
-3. **Pemulihan Tanpa PC jika terjadi masalah boot:**
-   * Saat logo Google muncul di awal boot, **tekan-lepas (tap) tombol Volume Down berulang-ulang (>3 kali)** hingga perangkat masuk ke **KernelSU Safe Mode**.
-   * Semua modul otomatis dinonaktifkan; buka **KernelSU Manager** → hapus/nonaktifkan modul, lalu reboot normal.
+Jika terjadi kendala boot: tahan tombol **Power ±10–15 detik** hingga restart, lalu begitu logo **Google** muncul **tekan-lepas tombol Volume Down berulang (>3 kali)** untuk masuk ke **KernelSU Safe Mode** (menonaktifkan semua modul).
 
 ---
 

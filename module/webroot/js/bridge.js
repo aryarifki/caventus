@@ -29,11 +29,11 @@ let mockState = {
     mem_used_bytes: 880120000,
   },
   vm: {
-    swappiness: '80',
+    swappiness: '70',
     vfs_cache_pressure: '100',
-    watermark_scale_factor: '65',
-    dirty_background_ratio: '5',
-    dirty_ratio: '15',
+    watermark_scale_factor: '55',
+    dirty_background_ratio: '10',
+    dirty_ratio: '20',
     page_cluster: '0',
     mglru_enabled: '0x0003',
     mglru_min_ttl_ms: '1000',
@@ -43,21 +43,21 @@ let mockState = {
     shmem_enabled: 'never',
   },
   sched: {
-    profile: 'balanced',
-    latency_ns: '4166666',
-    adpf_rampup: '2',
+    profile: 'stock',
+    latency_ns: '8000000',
+    adpf_rampup: '4',
     ta_uclamp_min: '1',
     bg_uclamp_max: '512',
   },
   cpufreq: {
-    profile: 'responsive',
-    p0_up_us: '0',
-    p0_down_us: '4000',
-    p0_resp_ms: '4',
+    profile: 'stock',
+    p0_up_us: '500',
+    p0_down_us: '5000',
+    p0_resp_ms: '8',
   },
   io: {
     scheduler: 'mq-deadline',
-    read_ahead_kb: '128',
+    read_ahead_kb: '256',
     nr_requests: '128',
   },
   gpu: {
@@ -74,16 +74,16 @@ let mockState = {
   },
   lmkd: {
     use_psi: 'true',
-    psi_partial_ms: '50',
-    psi_complete_ms: '500',
-    thrashing_limit: '60',
-    swap_free_low_pct: '20',
-    swap_util_max: '85',
+    psi_partial_ms: '70',
+    psi_complete_ms: '700',
+    thrashing_limit: '80',
+    swap_free_low_pct: '10',
+    swap_util_max: '95',
   },
   art: {
     dex2oat_filter: 'speed-profile',
-    image_filter: 'speed-profile',
-    madvise_odex_bytes: '33554432',
+    image_filter: 'stock',
+    madvise_odex_bytes: '67108864',
   },
   recompile_running: false,
   watchdog_running: false,
@@ -91,47 +91,51 @@ let mockState = {
     ZRAM_SIZE_MB: 4096,
     ZRAM_ALGO: 'lz77eh',
     MMD_ZRAM_SYNC: 1,
+    ZRAM_RUNTIME_RESIZE: 0,
     SWAPOFF_HEADROOM_PCT: 80,
-    VM_SWAPPINESS: 80,
+    VM_SWAPPINESS: 70,
     VM_VFS_CACHE_PRESSURE: 100,
-    VM_WATERMARK_SCALE_FACTOR: 65,
-    VM_DIRTY_BACKGROUND_RATIO: 5,
-    VM_DIRTY_RATIO: 15,
+    VM_WATERMARK_SCALE_FACTOR: 55,
+    VM_DIRTY_BACKGROUND_RATIO: 10,
+    VM_DIRTY_RATIO: 20,
     VM_PAGE_CLUSTER: 0,
     VM_STAT_INTERVAL: 10,
     MGLRU_ENABLED: 1,
     MGLRU_MIN_TTL_MS: 1000,
     THP_MODE: 'never',
-    SCHED_PROFILE: 'balanced',
-    CPU_RATE_PROFILE: 'responsive',
+    SCHED_PROFILE: 'stock',
+    CPU_RATE_PROFILE: 'stock',
     IO_SCHEDULER: 'mq-deadline',
-    IO_READ_AHEAD_KB: 128,
+    IO_READ_AHEAD_KB: 256,
     IO_NR_REQUESTS: 128,
     GPU_POWER_POLICY: 'adaptive',
     GPU_DVFS_PERIOD_MS: 20,
     SF_TUNING_MODE: 'off',
     WATCHDOG_ENABLED: 0,
     ART_DEX2OAT_FILTER: 'speed-profile',
-    ART_MADVISE_MB: 32,
+    ART_MADVISE_MB: 64,
+    ART_BOOT_PROPS: 0,
     LMKD_USE_PSI: 'true',
-    LMKD_PSI_PARTIAL_MS: 50,
-    LMKD_PSI_COMPLETE_MS: 500,
-    LMKD_THRASHING_LIMIT: 60,
-    LMKD_THRASHING_DECAY: 15,
-    LMKD_SWAP_FREE_LOW_PCT: 20,
-    LMKD_SWAP_UTIL_MAX: 85,
+    LMKD_PSI_PARTIAL_MS: 70,
+    LMKD_PSI_COMPLETE_MS: 700,
+    LMKD_THRASHING_LIMIT: 80,
+    LMKD_THRASHING_DECAY: 10,
+    LMKD_SWAP_FREE_LOW_PCT: 10,
+    LMKD_SWAP_UTIL_MAX: 95,
     LMKD_KILL_HEAVIEST: 'true',
-    LMKD_KILL_TIMEOUT_MS: 100,
-    LMKD_DOWNGRADE_PRESSURE: 60,
+    LMKD_KILL_TIMEOUT_MS: 150,
+    LMKD_DOWNGRADE_PRESSURE: 80,
+    AUTO_BOOT_DIAG: 1,
     ACTION_MODE: 'both',
     RECOMPILE_SCOPE: 'all',
   },
 };
 
 let mockLogs = [
-  '[2026-11-24 23:15:02] zram0 configured: 4096 MB (4294967296B), algo=lz77eh, backing_dev=/dev/block/loop17',
-  '[2026-11-24 23:15:02] VM sysctls applied (swappiness=80, watermark_scale=65, dirty=5/15, mglru=1).',
-  '[2026-11-24 23:15:02] LMKD reinitialized (use_psi=true, partial_ms=50, thrash=60, swap_low=20%).',
+  '[2026-11-28 04:55:02] SKIPPED runtime zram0 swapoff (ZRAM_RUNTIME_RESIZE=0): live=3221225472B/lz77eh vs target=4294967296B/lz77eh',
+  '[2026-11-28 04:55:02] VM sysctls applied (swappiness=70, watermark_scale=55, dirty=10/20, mglru=1).',
+  '[2026-11-28 04:55:02] LMKD reinitialized (use_psi=true, partial_ms=70, thrash=80, swap_low=10%).',
+  '[2026-11-28 04:55:03] Caventus apply finished in 1s.',
 ];
 
 export function isKsuEnvironment() {
@@ -334,11 +338,74 @@ function handleMockCtl(args) {
     mockLogs = ['[preview] Logs cleared.'];
     return Promise.resolve({ code: 0, stdout: 'Logs cleared.', stderr: '' });
   }
+  if (cmd === 'diag-list') {
+    return Promise.resolve({
+      code: 0,
+      stdout: 'caventus-diag-20261128-045500-manual.log|42KB\nlast-boot.log|3KB',
+      stderr: '',
+    });
+  }
+  if (cmd === 'diag-read') {
+    return Promise.resolve({
+      code: 0,
+      stdout: [
+        '===== SECTION 01: METADATA, CONFIG & KSU MODULE INVENTORY =====',
+        'device=oriole | android=17 | kernel=6.1.176-android14-Wild',
+        'SCHED_PROFILE=stock | CPU_RATE_PROFILE=stock | ART_BOOT_PROPS=0 | ZRAM_RUNTIME_RESIZE=0',
+        '',
+        '===== SECTION 05: PSI (PRESSURE STALL INFORMATION) =====',
+        'cpu: some avg10=7.41 avg60=6.82 | io: some avg10=0.60 | mem: some avg10=0.11',
+        '',
+        '===== SECTION 13: AUTOMATED DIAGNOSTIC SUMMARY =====',
+        'THERMAL_THROTTLE_MAX_STATE=0',
+        'HIGH_SOC_TEMP=0 (BIG=51.0C, MID=52.0C)',
+        'ZRAM_FULL_PCT=78%',
+        'ZRAM_MMD_MISMATCH=0',
+        'ODREFRESH_HITS=0',
+        'LMKD_KILL_HITS=0',
+        'SLOW_DISPLAYED_HITS=0',
+        'AVC_DENIED_HITS=0',
+      ].join('\n'),
+      stderr: '',
+    });
+  }
+  if (cmd === 'diag-clear') {
+    mockLogs.push('[preview] Diagnostic logs cleared.');
+    return Promise.resolve({ code: 0, stdout: 'Diagnostic logs cleared.', stderr: '' });
+  }
   return Promise.resolve({ code: 0, stdout: '', stderr: '' });
 }
 
 function handleMockSpawn(args, handlers) {
   const child = createChildEmitter(handlers);
+  const subcmd = args[0] || '';
+  if (subcmd === 'diag-capture') {
+    const steps = [
+      'STAGE=1/13 Collecting metadata, config & module inventory',
+      'STAGE=4/13 Reading Memory, zRAM, VM, MGLRU, THP & vmstat',
+      'STAGE=6/13 Reading Thermal Zones & Cooling Throttle State',
+      'STAGE=10/13 Live Time-Series Sampling (duration=15s, interval=3s)',
+      'SAMPLE=1/5 avail=1820MB swap=2290MB psi=4.10/0.35/0.04 big=51.0C',
+      'SAMPLE=3/5 avail=1804MB swap=2305MB psi=5.20/0.40/0.06 big=52.1C',
+      'SAMPLE=5/5 avail=1836MB swap=2298MB psi=3.80/0.25/0.03 big=51.4C',
+      'STAGE=11/13 Extracting Logcat Forensics (ART, LMKD, mmd, Thermal, SF)',
+      'STAGE=13/13 Computing Automated Diagnostic Summary',
+      'SAVED_INTERNAL=/data/adb/caventus/diag/caventus-diag-20261128-045500-manual.log',
+      'SAVED_EXPORT=/sdcard/Download/Caventus-Logs/caventus-diag-20261128-045500-manual.log',
+      'VERDICT=THROTTLE=0 HIGH_TEMP=0 ZRAM=78% MISMATCH=0 ODREFRESH=0 LMKD=0 SLOW_APP=0 AVC=0',
+    ];
+    let i = 0;
+    const iv = setInterval(() => {
+      if (i < steps.length) {
+        child.stdout.emit('data', steps[i]);
+        i += 1;
+      } else {
+        clearInterval(iv);
+        child.emit('exit', 0);
+      }
+    }, 160);
+    return child;
+  }
   const samplePkgs = [
     'com.android.systemui',
     'com.google.android.gms',

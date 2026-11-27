@@ -1,27 +1,25 @@
 # === Caventus: Pixel 6 (oriole / GS101) Memory Optimization ===
-# Boot-safe Oriole Optimal defaults (SF_TUNING_MODE=off)
+# v1.4.0 Boot-safe & Thermal-safe defaults (ART_BOOT_PROPS=0, SF_TUNING_MODE=off)
 
-# 1. ART / dex2oat — revert 'everything' mmap bloat to profile-guided compilation
-dalvik.vm.dex2oat-filter=speed-profile
-dalvik.vm.image-dex2oat-filter=speed-profile
+# 1. ART / dex2oat — anti-odrefresh safe defaults (runtime install/bg-dexopt only)
 pm.dexopt.install=speed-profile
 pm.dexopt.bg-dexopt=speed-profile
 pm.dexopt.shared=speed
-dalvik.vm.madvise.odexfile.size=33554432
-dalvik.vm.madvise.vdexfile.size=33554432
+dalvik.vm.madvise.odexfile.size=67108864
+dalvik.vm.madvise.vdexfile.size=67108864
 
-# 2. LMKD — PSI-based tuning for 8 GB Pixel 6 (with Native/DroidSpaces headroom)
+# 2. LMKD — Relaxed PSI-based tuning for 8 GB Pixel 6 (prevents kill/respawn storms)
 ro.lmk.use_psi=true
 ro.lmk.use_minfree_levels=false
-ro.lmk.psi_partial_stall_ms=50
-ro.lmk.psi_complete_stall_ms=500
-ro.lmk.thrashing_limit=60
-ro.lmk.thrashing_limit_decay=15
-ro.lmk.swap_free_low_percentage=20
-ro.lmk.swap_util_max=85
+ro.lmk.psi_partial_stall_ms=70
+ro.lmk.psi_complete_stall_ms=700
+ro.lmk.thrashing_limit=80
+ro.lmk.thrashing_limit_decay=10
+ro.lmk.swap_free_low_percentage=10
+ro.lmk.swap_util_max=95
 ro.lmk.kill_heaviest_task=true
-ro.lmk.kill_timeout_ms=100
-ro.lmk.downgrade_pressure=60
+ro.lmk.kill_timeout_ms=150
+ro.lmk.downgrade_pressure=80
 ro.lmk.debug=false
 
 # 3. Android 16/17 mmd zRAM boot sync

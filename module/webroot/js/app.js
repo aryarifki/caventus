@@ -21,8 +21,11 @@ const I18N = {
     qa_recomp_sub: "Paksa turun dari 'everything' ke 'speed-profile' (-f)",
     qa_apply_title: 'Terapkan Tuning Aktif',
     qa_apply_sub: 'Sinkronkan VM, MGLRU, LMKD & zRAM (aman OOM)',
+    qa_diag_title: 'Tangkap Log Diagnostik (15s)',
+    qa_diag_sub: 'Rekam logcat, dmesg, thermal, PSI & ekspor ke Download',
     btn_run: 'Run',
     btn_execute: 'Execute',
+    btn_capture: 'Capture',
     preset_title: 'Profil Optimasi Pixel 6',
     preset_desc: 'Pilih baseline cepat lalu sesuaikan parameter di bawah.',
     zram_desc: 'Ukuran dan kompresor /dev/block/zram0 (writeback-safe).',
@@ -32,9 +35,13 @@ const I18N = {
     zram_algo_sub: 'lz77eh offload HW GS101 (hemat CPU/baterai); zstd paling padat',
     mmd_sync_title: 'Android 17 mmd zRAM Boot Sync',
     mmd_sync_sub: 'Sinkronkan mmd.zram.size & comp_algorithm sejak early-boot',
+    zram_rt_resize_title: 'Izinkan Resize zRAM Runtime (swapoff)',
+    zram_rt_resize_sub: 'Matikan untuk mencegah freeze pasca-boot jika ukuran zram0 berbeda',
     art_desc: 'Kontrol kompilasi aplikasi dan ukuran mmap odex/vdex.',
     art_filter_sub: 'speed-profile menghemat RAM mmap dibanding everything',
-    art_madvise_sub: 'Batas prefetch mmap file bytecode (default stok 100 MB)',
+    art_madvise_sub: 'Batas prefetch mmap file bytecode (default aman 64 MB)',
+    art_boot_props_title: 'Override Boot Framework Filter',
+    art_boot_props_sub: 'Set dalvik.vm.*dex2oat-filter di system.prop (berisiko memicu odrefresh saat boot)',
     lmkd_desc: 'Tuning PSI agar app cached dibersihkan sebelum zRAM penuh.',
     vm_desc: 'Parameter sysctl memori kernel Linux 6.1 GS101.',
     swappiness_sub: 'Prioritas kompresi halaman anon ke zRAM',
@@ -71,6 +78,15 @@ const I18N = {
     logs_title: 'Log Runtime Caventus',
     btn_refresh_logs: 'Muat Ulang Log',
     btn_clear_logs: 'Hapus Log',
+    diag_title: 'Forensic Diagnostic Capture',
+    diag_desc: 'Rekam snapshot lengkap 13 seksi (boot, logcat, dmesg, thermal, PSI, CPUFreq, zRAM) untuk dianalisis & disempurnakan.',
+    diag_dur_label: 'Durasi Sampling Live',
+    diag_dur_sub: 'Gunakan 30s sambil membuka aplikasi yang terasa lambat',
+    diag_boot_title: 'Auto-Capture Setiap Boot',
+    diag_boot_sub: 'Simpan laporan otomatis pasca-boot (--tag=boot) ke /sdcard/Download/Caventus-Logs/',
+    btn_run_diag: 'Rekam & Ekspor Log Lengkap',
+    btn_view_diag: 'Lihat Terakhir',
+    btn_clear_diag: 'Bersihkan',
     theme_title: 'Tema Material 3 Expressive',
     theme_desc: 'Palet warna tonal terinspirasi dari Specter.',
     theme_mode_label: 'Mode Tampilan',
@@ -79,7 +95,7 @@ const I18N = {
     lang_label: 'Bahasa / Language',
     module_mgmt: 'Manajemen Modul',
     reset_title: 'Reset ke Default Pixel 6 (oriole)',
-    reset_sub: 'Kembalikan profil Oriole Optimal (4 GB lz77eh, speed-profile, SF off)',
+    reset_sub: 'Kembalikan profil Oriole Safe & Cool (4 GB lz77eh, sched stock, anti-odrefresh)',
     unsaved_changes: 'Perubahan belum disimpan',
     btn_discard: 'Batal',
     btn_save_apply: 'Simpan & Terapkan',
@@ -108,8 +124,11 @@ const I18N = {
     qa_recomp_sub: "Force downgrade from 'everything' to 'speed-profile' (-f)",
     qa_apply_title: 'Apply Active Tuning',
     qa_apply_sub: 'Sync VM, MGLRU, LMKD & zRAM (OOM-guarded)',
+    qa_diag_title: 'Capture Diagnostic Logs (15s)',
+    qa_diag_sub: 'Record logcat, dmesg, thermal, PSI & export to Download',
     btn_run: 'Run',
     btn_execute: 'Execute',
+    btn_capture: 'Capture',
     preset_title: 'Pixel 6 Optimization Profiles',
     preset_desc: 'Pick a quick baseline then fine-tune parameters below.',
     zram_desc: 'Size and compressor for /dev/block/zram0 (writeback-safe).',
@@ -119,9 +138,13 @@ const I18N = {
     zram_algo_sub: 'lz77eh uses GS101 HW offload (lowest CPU/battery); zstd is densest',
     mmd_sync_title: 'Android 17 mmd zRAM Boot Sync',
     mmd_sync_sub: 'Sync mmd.zram.size & comp_algorithm during early boot',
+    zram_rt_resize_title: 'Allow Runtime zRAM Resize (swapoff)',
+    zram_rt_resize_sub: 'Keep OFF to prevent post-boot freeze if zram0 size differs',
     art_desc: 'Control app compilation filter and odex/vdex mmap limit.',
     art_filter_sub: 'speed-profile saves RAM mmap compared to everything',
-    art_madvise_sub: 'Bytecode mmap prefetch limit (stock default 100 MB)',
+    art_madvise_sub: 'Bytecode mmap prefetch limit (safe default 64 MB)',
+    art_boot_props_title: 'Override Boot Framework Filter',
+    art_boot_props_sub: 'Write dalvik.vm.*dex2oat-filter to system.prop (may trigger odrefresh on boot)',
     lmkd_desc: 'PSI tuning to trim cached apps before zRAM saturates.',
     vm_desc: 'Linux 6.1 GS101 kernel memory sysctl parameters.',
     swappiness_sub: 'Tendency to compress anonymous pages into zRAM',
@@ -158,6 +181,15 @@ const I18N = {
     logs_title: 'Caventus Runtime Logs',
     btn_refresh_logs: 'Refresh Logs',
     btn_clear_logs: 'Clear Logs',
+    diag_title: 'Forensic Diagnostic Capture',
+    diag_desc: 'Record 13-section snapshot (boot trace, logcat, dmesg, thermal, PSI, CPUFreq, zRAM) for deep root-cause analysis.',
+    diag_dur_label: 'Live Sampling Duration',
+    diag_dur_sub: 'Use 30s while launching apps that feel slow',
+    diag_boot_title: 'Auto-Capture On Every Boot',
+    diag_boot_sub: 'Save automatic post-boot report (--tag=boot) to /sdcard/Download/Caventus-Logs/',
+    btn_run_diag: 'Capture & Export Full Logs',
+    btn_view_diag: 'View Latest',
+    btn_clear_diag: 'Clear Archives',
     theme_title: 'Material 3 Expressive Theme',
     theme_desc: 'Tonal color palettes inspired by Specter.',
     theme_mode_label: 'Appearance Mode',
@@ -166,7 +198,7 @@ const I18N = {
     lang_label: 'Bahasa / Language',
     module_mgmt: 'Module Management',
     reset_title: 'Reset to Pixel 6 (oriole) Defaults',
-    reset_sub: 'Restore Oriole Optimal defaults (4 GB lz77eh, speed-profile, SF off)',
+    reset_sub: 'Restore Oriole Safe & Cool defaults (4 GB lz77eh, stock sched, anti-odrefresh)',
     unsaved_changes: 'Unsaved changes',
     btn_discard: 'Discard',
     btn_save_apply: 'Save & Apply',
@@ -183,6 +215,7 @@ let currentLang = localStorage.getItem('caventus_lang') || 'id';
 let liveState = null;
 let savedConfig = {};
 let draftConfig = {};
+let selectedDiagDuration = '15';
 let snackTimer = null;
 
 function $(id) {
@@ -227,7 +260,10 @@ function switchPage(pageId) {
     t.classList.toggle('nav-tab--active', t.dataset.page === pageId);
   });
   requestAnimationFrame(updateNavIndicator);
-  if (pageId === 'tools') refreshLogs();
+  if (pageId === 'tools') {
+    refreshLogs();
+    refreshDiagList();
+  }
 }
 
 function renderTelemetry(data) {
@@ -331,6 +367,15 @@ function syncControlsFromDraft() {
   if ($('cfg-MMD_ZRAM_SYNC')) {
     $('cfg-MMD_ZRAM_SYNC').checked = Number(draftConfig.MMD_ZRAM_SYNC) === 1;
   }
+  if ($('cfg-ZRAM_RUNTIME_RESIZE')) {
+    $('cfg-ZRAM_RUNTIME_RESIZE').checked = Number(draftConfig.ZRAM_RUNTIME_RESIZE) === 1;
+  }
+  if ($('cfg-ART_BOOT_PROPS')) {
+    $('cfg-ART_BOOT_PROPS').checked = Number(draftConfig.ART_BOOT_PROPS) === 1;
+  }
+  if ($('cfg-AUTO_BOOT_DIAG')) {
+    $('cfg-AUTO_BOOT_DIAG').checked = Number(draftConfig.AUTO_BOOT_DIAG) === 1;
+  }
   if ($('cfg-LMKD_USE_PSI')) {
     $('cfg-LMKD_USE_PSI').checked = String(draftConfig.LMKD_USE_PSI) === 'true';
   }
@@ -351,6 +396,7 @@ function syncControlsFromDraft() {
   setChipSelection('chips-ART_DEX2OAT_FILTER', draftConfig.ART_DEX2OAT_FILTER);
   setChipSelection('chips-RECOMPILE_SCOPE', draftConfig.RECOMPILE_SCOPE);
   setChipSelection('chips-ACTION_MODE', draftConfig.ACTION_MODE);
+  setChipSelection('chips-DIAG_DURATION', selectedDiagDuration);
 }
 
 function getChangedPairs() {
@@ -404,20 +450,21 @@ async function saveAndApplyConfig() {
     String(draftConfig.ZRAM_ALGO) !== String(savedConfig.ZRAM_ALGO);
   const bootPropChanged =
     String(draftConfig.SF_TUNING_MODE) !== String(savedConfig.SF_TUNING_MODE) ||
-    String(draftConfig.MMD_ZRAM_SYNC) !== String(savedConfig.MMD_ZRAM_SYNC);
+    String(draftConfig.MMD_ZRAM_SYNC) !== String(savedConfig.MMD_ZRAM_SYNC) ||
+    String(draftConfig.ART_BOOT_PROPS) !== String(savedConfig.ART_BOOT_PROPS);
 
   await refreshTelemetry();
-  if (zramChanged && (applyRes.stdout || '').includes('DEFERRED')) {
+  if (zramChanged && ((applyRes.stdout || '').includes('DEFERRED') || (applyRes.stdout || '').includes('SKIPPED'))) {
     showSnackbar(
       currentLang === 'id'
-        ? 'Disimpan! Reboot diperlukan untuk resize zRAM secara aman.'
-        : 'Saved! Reboot required to resize zRAM safely.'
+        ? 'Disimpan! Reboot disarankan untuk menerapkan zRAM mmd saat boot.'
+        : 'Saved! Reboot recommended for boot-time mmd zRAM setup.'
     );
   } else if (bootPropChanged) {
     showSnackbar(
       currentLang === 'id'
-        ? 'Disimpan & diterapkan! Reboot disarankan untuk efek penuh SurfaceFlinger/mmd.'
-        : 'Saved & applied! Reboot recommended for full SurfaceFlinger/mmd effect.'
+        ? 'Disimpan & diterapkan! Reboot disarankan untuk properti boot.'
+        : 'Saved & applied! Reboot recommended for boot properties.'
     );
   } else {
     showSnackbar(currentLang === 'id' ? 'Pengaturan disimpan & diterapkan' : 'Settings saved & applied');
@@ -426,6 +473,7 @@ async function saveAndApplyConfig() {
 
 function runRecompileStream() {
   const modal = $('recompile-modal');
+  const titleEl = $('recomp-modal-title');
   const term = $('recomp-terminal');
   const pill = $('recomp-progress-pill');
   const bar = $('recomp-progress-bar');
@@ -438,6 +486,7 @@ function runRecompileStream() {
   const args = ['recompile', `--filter=${filter}`, `--scope=${scope}`];
   if (useReset) args.push('--reset');
 
+  titleEl.textContent = `ART Recompile (${filter})`;
   term.textContent = `> caventus-ctl.sh ${args.join(' ')}\n`;
   pill.textContent = '0 / ?';
   bar.style.width = '0%';
@@ -482,6 +531,99 @@ function runRecompileStream() {
   });
 }
 
+function runDiagCapture(durationSec = selectedDiagDuration) {
+  const modal = $('recompile-modal');
+  const titleEl = $('recomp-modal-title');
+  const term = $('recomp-terminal');
+  const pill = $('recomp-progress-pill');
+  const bar = $('recomp-progress-bar');
+  const closeBtn = $('btn-close-recomp');
+
+  const dur = String(durationSec || '15');
+  const args = ['diag-capture', `--duration=${dur}`, '--interval=3', '--export=1', `--tag=webui_${dur}s`];
+
+  titleEl.textContent = currentLang === 'id' ? `Forensic Diagnostic Capture (${dur}s)` : `Forensic Diagnostic Capture (${dur}s)`;
+  term.textContent = `> caventus-ctl.sh ${args.join(' ')}\n`;
+  pill.textContent = '0 / 13';
+  bar.style.width = '0%';
+  closeBtn.disabled = true;
+  modal.classList.add('open');
+
+  let exportPath = '';
+  const appendLine = line => {
+    if (!line) return;
+    const st = line.match(/^STAGE=(\d+)\/(\d+)\s*(.*)$/);
+    if (st) {
+      const cur = Number(st[1]);
+      const tot = Number(st[2]);
+      pill.textContent = `${cur} / ${tot}`;
+      bar.style.width = `${tot > 0 ? Math.round((cur / tot) * 100) : 0}%`;
+    }
+    if (line.startsWith('SAVED_EXPORT=')) {
+      exportPath = line.slice(13).trim();
+    }
+    term.textContent += `${line}\n`;
+    term.scrollTop = term.scrollHeight;
+  };
+
+  const child = spawnCtl(args);
+  child.stdout.on('data', appendLine);
+  child.stderr.on('data', errLine => appendLine(`[ERR] ${errLine}`));
+  child.on('exit', code => {
+    closeBtn.disabled = false;
+    if (code === 0) {
+      bar.style.width = '100%';
+      pill.textContent = '13 / 13';
+      showSnackbar(
+        exportPath
+          ? (currentLang === 'id' ? `Diekspor: ${exportPath}` : `Exported: ${exportPath}`)
+          : (currentLang === 'id' ? 'Diagnostik selesai' : 'Diagnostic capture completed')
+      );
+      refreshDiagList();
+    } else {
+      showSnackbar(`Diagnostic exited with code ${code}`);
+    }
+  });
+  child.on('error', err => {
+    closeBtn.disabled = false;
+    appendLine(`[ERROR] ${err.message}`);
+  });
+}
+
+async function viewLastDiag() {
+  const modal = $('recompile-modal');
+  const titleEl = $('recomp-modal-title');
+  const term = $('recomp-terminal');
+  const pill = $('recomp-progress-pill');
+  const bar = $('recomp-progress-bar');
+  const closeBtn = $('btn-close-recomp');
+
+  titleEl.textContent = currentLang === 'id' ? 'Laporan Diagnostik Terakhir' : 'Latest Diagnostic Report';
+  pill.textContent = 'tail 250';
+  bar.style.width = '100%';
+  closeBtn.disabled = false;
+  term.textContent = 'Loading...';
+  modal.classList.add('open');
+
+  const res = await callCtl(['diag-read', '--tail=250']);
+  term.textContent = res.stdout || res.stderr || 'No diagnostic logs yet.';
+  term.scrollTop = term.scrollHeight;
+}
+
+async function refreshDiagList() {
+  const el = $('diag-list-terminal');
+  if (!el) return;
+  const res = await callCtl(['diag-list']);
+  const txt = (res.stdout || '').trim();
+  if (!txt || txt === 'NONE|0KB') {
+    el.textContent = currentLang === 'id'
+      ? 'Belum ada arsip diagnostik.\nEkspor akan tersimpan di /sdcard/Download/Caventus-Logs/'
+      : 'No diagnostic archives yet.\nExports will save to /sdcard/Download/Caventus-Logs/';
+  } else {
+    el.textContent = txt.split('\n').map(l => `• ${l.replace('|', ' — ')}`).join('\n');
+  }
+}
+
 async function refreshLogs() {
   const res = await callCtl(['logs', '120']);
   $('log-terminal').textContent = res.stdout || res.stderr || 'No logs yet.';
@@ -514,6 +656,7 @@ function wireControls() {
     showSnackbar(currentLang === 'id' ? 'Tuning diterapkan' : 'Tuning applied');
     refreshTelemetry();
   });
+  $('qa-diag')?.addEventListener('click', () => runDiagCapture('15'));
 
   // Tuning Presets
   document.querySelectorAll('#preset-chips .m3-chip').forEach(btn => {
@@ -557,6 +700,18 @@ function wireControls() {
     draftConfig.MMD_ZRAM_SYNC = e.target.checked ? 1 : 0;
     updateSaveDock();
   });
+  $('cfg-ZRAM_RUNTIME_RESIZE')?.addEventListener('change', e => {
+    draftConfig.ZRAM_RUNTIME_RESIZE = e.target.checked ? 1 : 0;
+    updateSaveDock();
+  });
+  $('cfg-ART_BOOT_PROPS')?.addEventListener('change', e => {
+    draftConfig.ART_BOOT_PROPS = e.target.checked ? 1 : 0;
+    updateSaveDock();
+  });
+  $('cfg-AUTO_BOOT_DIAG')?.addEventListener('change', e => {
+    draftConfig.AUTO_BOOT_DIAG = e.target.checked ? 1 : 0;
+    updateSaveDock();
+  });
   $('cfg-LMKD_USE_PSI')?.addEventListener('change', e => {
     draftConfig.LMKD_USE_PSI = e.target.checked ? 'true' : 'false';
     updateSaveDock();
@@ -592,6 +747,13 @@ function wireControls() {
     });
   });
 
+  document.querySelectorAll('#chips-DIAG_DURATION .m3-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedDiagDuration = btn.dataset.val;
+      setChipSelection('chips-DIAG_DURATION', selectedDiagDuration);
+    });
+  });
+
   // Save Dock
   $('btn-discard').addEventListener('click', () => {
     draftConfig = { ...savedConfig };
@@ -602,6 +764,13 @@ function wireControls() {
 
   // Tools
   $('btn-run-recompile').addEventListener('click', runRecompileStream);
+  $('btn-run-diag')?.addEventListener('click', () => runDiagCapture(selectedDiagDuration));
+  $('btn-view-diag')?.addEventListener('click', viewLastDiag);
+  $('btn-clear-diag')?.addEventListener('click', async () => {
+    await callCtl(['diag-clear']);
+    refreshDiagList();
+    showSnackbar(currentLang === 'id' ? 'Arsip diagnostik dibersihkan' : 'Diagnostic archives cleared');
+  });
   $('btn-refresh-logs').addEventListener('click', refreshLogs);
   $('btn-clear-logs').addEventListener('click', async () => {
     await callCtl(['clear-logs']);

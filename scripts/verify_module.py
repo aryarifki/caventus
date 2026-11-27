@@ -17,17 +17,17 @@ DIST_DIR = ROOT / "dist"
 
 REQUIRED_PROP_KEYS = {"id", "name", "version", "versionCode", "author", "description"}
 REQUIRED_SYSTEM_PROPS = {
-    "dalvik.vm.dex2oat-filter": "speed-profile",
-    "dalvik.vm.image-dex2oat-filter": "speed-profile",
     "pm.dexopt.install": "speed-profile",
     "pm.dexopt.bg-dexopt": "speed-profile",
+    "dalvik.vm.madvise.odexfile.size": "67108864",
+    "dalvik.vm.madvise.vdexfile.size": "67108864",
     "ro.lmk.use_psi": "true",
     "ro.lmk.use_minfree_levels": "false",
-    "ro.lmk.psi_partial_stall_ms": "50",
-    "ro.lmk.psi_complete_stall_ms": "500",
-    "ro.lmk.thrashing_limit": "60",
-    "ro.lmk.swap_free_low_percentage": "20",
-    "ro.lmk.swap_util_max": "85",
+    "ro.lmk.psi_partial_stall_ms": "70",
+    "ro.lmk.psi_complete_stall_ms": "700",
+    "ro.lmk.thrashing_limit": "80",
+    "ro.lmk.swap_free_low_percentage": "10",
+    "ro.lmk.swap_util_max": "95",
     "mmd.zram.enabled": "true",
     "mmd.zram.size": "4294967296",
     "mmd.zram.comp_algorithm": "lz77eh",
@@ -80,8 +80,8 @@ def check_module_prop() -> str:
     missing = REQUIRED_PROP_KEYS - set(props)
     assert not missing, f"Missing module.prop keys: {missing}"
     assert props["id"] == "caventus_oriole_ram"
-    assert props["version"] == "v1.3.0"
-    assert props["versionCode"] == "130"
+    assert props["version"] == "v1.4.0"
+    assert props["versionCode"] == "140"
     print(f"PASS: module.prop ({props['id']} {props['version']})")
     return props["version"]
 
@@ -101,7 +101,9 @@ def check_system_prop() -> None:
         assert actual == expected, f"system.prop {k}: expected {expected!r}, got {actual!r}"
     sf_keys = [k for k in props if k.startswith("ro.surface_flinger.")]
     assert not sf_keys, f"Default system.prop must be boot-safe without SurfaceFlinger props: {sf_keys}"
-    print(f"PASS: system.prop ({len(props)} properties, boot-safe)")
+    art_boot_keys = [k for k in ("dalvik.vm.dex2oat-filter", "dalvik.vm.image-dex2oat-filter") if k in props]
+    assert not art_boot_keys, f"Default system.prop must not trigger odrefresh on boot: {art_boot_keys}"
+    print(f"PASS: system.prop ({len(props)} properties, boot-safe & anti-odrefresh)")
 
 
 def check_shell_unit_tests() -> None:
@@ -134,6 +136,7 @@ if can_safely_swapoff 2764800 1254016 80; then exit 1; fi
 validate_config_kv ZRAM_SIZE_MB 4096
 validate_config_kv ZRAM_ALGO zstd
 validate_config_kv MMD_ZRAM_SYNC 1
+validate_config_kv ZRAM_RUNTIME_RESIZE 0
 validate_config_kv THP_MODE madvise
 validate_config_kv SCHED_PROFILE ptune
 validate_config_kv CPU_RATE_PROFILE responsive
@@ -145,10 +148,16 @@ validate_config_kv GPU_DVFS_PERIOD_MS 20
 validate_config_kv SF_TUNING_MODE ptune
 validate_config_kv WATCHDOG_ENABLED 1
 validate_config_kv ART_DEX2OAT_FILTER speed-profile
+validate_config_kv ART_BOOT_PROPS 1
+validate_config_kv AUTO_BOOT_DIAG 1
 validate_config_kv ACTION_MODE both
+validate_config_kv ACTION_MODE diag
 if validate_config_kv ZRAM_SIZE_MB "4096; id" >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv ZRAM_SIZE_MB 99999 >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv ZRAM_ALGO badalgo >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv ZRAM_RUNTIME_RESIZE 2 >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv ART_BOOT_PROPS 2 >/dev/null 2>&1; then exit 1; fi
+if validate_config_kv AUTO_BOOT_DIAG 2 >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv SCHED_PROFILE invalid >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv IO_READ_AHEAD_KB 2048 >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv IO_NR_REQUESTS 16 >/dev/null 2>&1; then exit 1; fi
@@ -156,42 +165,74 @@ if validate_config_kv GPU_DVFS_PERIOD_MS 5 >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv SF_TUNING_MODE "ptune; rm" >/dev/null 2>&1; then exit 1; fi
 if validate_config_kv UNKNOWN_KEY 1 >/dev/null 2>&1; then exit 1; fi
 
-# 4. Sandbox init-defaults + save-config + sync_system_prop (ptune, off, mmd_sync)
+# 4. Sandbox init-defaults + save-config + sync_system_prop (ptune, off, mmd_sync, art_boot_props)
 export CAVENTUS_SOURCE_ONLY=0
 export CAVENTUS_MODDIR="{sb}/mod"
 export CAVENTUS_CONFIG_ENV="{sb}/config.env"
 export CAVENTUS_LOG_FILE="{sb}/caventus.log"
 export CAVENTUS_LOCK_FILE="{sb}/recompile.lock"
 export CAVENTUS_WATCHDOG_PID_FILE="{sb}/watchdog.pid"
+export CAVENTUS_DIAG_DIR="{sb}/diag"
+export CAVENTUS_EXPORT_DIR="{sb}/export"
+export CAVENTUS_PROJECT_EXPORT_DIR="{sb}/proj_export"
 export CAVENTUS_NO_WATCHDOG=1
+mkdir -p "{sb}/proj_export"
 
 sh "{ctl}" init-defaults >/dev/null
 grep -q '^ZRAM_ALGO=lz77eh$' "{sb}/config.env"
+grep -q '^ZRAM_RUNTIME_RESIZE=0$' "{sb}/config.env"
+grep -q '^ART_BOOT_PROPS=0$' "{sb}/config.env"
+grep -q '^AUTO_BOOT_DIAG=1$' "{sb}/config.env"
+grep -q '^SCHED_PROFILE=stock$' "{sb}/config.env"
+grep -q '^CPU_RATE_PROFILE=stock$' "{sb}/config.env"
 grep -q '^SF_TUNING_MODE=off$' "{sb}/config.env"
-grep -q '^VM_WATERMARK_SCALE_FACTOR=65$' "{sb}/config.env"
+grep -q '^VM_WATERMARK_SCALE_FACTOR=55$' "{sb}/config.env"
 grep -q '^IO_NR_REQUESTS=128$' "{sb}/config.env"
 grep -q '^mmd.zram.comp_algorithm=lz77eh$' "{sb}/mod/system.prop"
 if grep -q '^ro\\.surface_flinger\\.' "{sb}/mod/system.prop"; then exit 1; fi
+if grep -q '^dalvik\\.vm\\.dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
+if grep -q '^dalvik\\.vm\\.image-dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
 
-sh "{ctl}" save-config ZRAM_SIZE_MB=5120 ART_DEX2OAT_FILTER=speed LMKD_PSI_PARTIAL_MS=40 SCHED_PROFILE=ptune SF_TUNING_MODE=ptune IO_READ_AHEAD_KB=0 >/dev/null
+sh "{ctl}" save-config ZRAM_SIZE_MB=5120 ART_DEX2OAT_FILTER=speed ART_BOOT_PROPS=1 LMKD_PSI_PARTIAL_MS=40 SCHED_PROFILE=ptune SF_TUNING_MODE=ptune IO_READ_AHEAD_KB=0 >/dev/null
 grep -q '^ZRAM_SIZE_MB=5120$' "{sb}/config.env"
 grep -q '^SCHED_PROFILE=ptune$' "{sb}/config.env"
 grep -q '^dalvik.vm.dex2oat-filter=speed$' "{sb}/mod/system.prop"
+grep -q '^dalvik.vm.image-dex2oat-filter=speed$' "{sb}/mod/system.prop"
 grep -q '^ro.lmk.psi_partial_stall_ms=40$' "{sb}/mod/system.prop"
 grep -q '^mmd.zram.size=5368709120$' "{sb}/mod/system.prop"
 grep -q '^ro.surface_flinger.max_frame_buffer_acquired_buffers=6$' "{sb}/mod/system.prop"
 grep -q '^ro.surface_flinger.game_default_frame_rate_override=90$' "{sb}/mod/system.prop"
 
-sh "{ctl}" save-config SF_TUNING_MODE=off MMD_ZRAM_SYNC=0 >/dev/null
+sh "{ctl}" save-config SF_TUNING_MODE=off MMD_ZRAM_SYNC=0 ART_BOOT_PROPS=0 >/dev/null
 if grep -q '^ro\\.surface_flinger\\.' "{sb}/mod/system.prop"; then exit 1; fi
 if grep -q '^mmd\\.zram\\.' "{sb}/mod/system.prop"; then exit 1; fi
+if grep -q '^dalvik\\.vm\\.dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
 
 sh "{ctl}" save-config SF_TUNING_MODE=ram_safe MMD_ZRAM_SYNC=1 >/dev/null
 grep -q '^ro.surface_flinger.clear_slots_with_set_layer_buffer=true$' "{sb}/mod/system.prop"
 grep -q '^mmd.zram.enabled=true$' "{sb}/mod/system.prop"
 
-# 5. status-json emits valid JSON with all v1.2.0 sections
+# 5. status-json emits valid JSON with all v1.4.0 sections
 sh "{ctl}" status-json > "{sb}/status.json"
+
+# 6. Sandbox diagnostic capture, boot-snapshot, list, read, path-traversal guard
+sh "{ctl}" diag-boot-snapshot pre
+sh "{ctl}" diag-boot-snapshot post
+grep -q 'BOOT SNAPSHOT (pre)' "{sb}/diag/last-boot.log"
+grep -q 'BOOT SNAPSHOT (post)' "{sb}/diag/last-boot.log"
+sh "{ctl}" diag-capture --duration=0 --export=1 --tag=ci > "{sb}/diag_out.txt"
+grep -q '^SAVED_INTERNAL=' "{sb}/diag_out.txt"
+grep -q '^SAVED_EXPORT=' "{sb}/diag_out.txt"
+grep -q '^VERDICT=' "{sb}/diag_out.txt"
+test -s "{sb}/export/latest-caventus-diag.log"
+test -s "{sb}/proj_export/latest-caventus-diag.log"
+for sec in 01 02 03 04 05 06 07 08 09 10 11 12 13; do
+  grep -q "SECTION ${{sec}}:" "{sb}/export/latest-caventus-diag.log"
+done
+sh "{ctl}" diag-list | grep -q 'caventus-diag-.*-ci\\.log'
+sh "{ctl}" diag-read --tail=20 | grep -q 'AUTOMATED DIAGNOSTIC SUMMARY'
+if sh "{ctl}" diag-read ../config.env >/dev/null 2>&1; then exit 1; fi
+if sh "{ctl}" diag-read /etc/passwd >/dev/null 2>&1; then exit 1; fi
 """
         res = subprocess.run(["sh", "-c", test_script], capture_output=True, text=True)
         if res.returncode != 0:
@@ -202,12 +243,15 @@ sh "{ctl}" status-json > "{sb}/status.json"
             assert key in status_data, f"Missing key {key} in status-json"
         assert status_data["config"]["ZRAM_SIZE_MB"] == 5120
         assert status_data["config"]["ART_DEX2OAT_FILTER"] == "speed"
+        assert status_data["config"]["ZRAM_RUNTIME_RESIZE"] == 0
+        assert status_data["config"]["ART_BOOT_PROPS"] == 0
+        assert status_data["config"]["AUTO_BOOT_DIAG"] == 1
         assert status_data["config"]["SCHED_PROFILE"] == "ptune"
         assert status_data["config"]["IO_READ_AHEAD_KB"] == 0
         assert status_data["config"]["SF_TUNING_MODE"] == "ram_safe"
         assert status_data["config"]["MMD_ZRAM_SYNC"] == 1
 
-    print("PASS: shell unit tests (zram, swapoff guard, config validator, sync_system_prop, status-json)")
+    print("PASS: shell unit tests (zram, swapoff guard, config validator, sync_system_prop, status-json, diag suite)")
 
 
 def check_zip_artifact(version: str) -> None:

@@ -129,9 +129,20 @@
               </div>
               <div class="m3-row__content">
                 <span class="m3-row__title" data-i18n="qa_apply_title">Terapkan Tuning Aktif</span>
-                <span class="m3-row__sub" data-i18n="qa_apply_sub">Sinkronkan VM, MGLRU, LMKD & zRAM (aman OOM)</span>
+                <span class="m3-row__sub" data-i18n="qa_apply_sub">Sinkronkan VM, MGLRU, LMKD &amp; zRAM (aman OOM)</span>
               </div>
               <span class="m3-value-pill">Apply</span>
+            </div>
+
+            <div class="m3-row m3-row--clickable" id="qa-diag">
+              <div class="m3-icon-badge m3-icon-badge--error">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5s-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="qa_diag_title">Tangkap Log Diagnostik (15s)</span>
+                <span class="m3-row__sub" data-i18n="qa_diag_sub">Rekam logcat, dmesg, thermal, PSI &amp; ekspor ke Download</span>
+              </div>
+              <span class="m3-value-pill" data-i18n="btn_capture">Capture</span>
             </div>
           </div>
         </div>
@@ -148,7 +159,7 @@
           <div class="m3-group">
             <div class="m3-row m3-row--stacked">
               <div class="chip-row" id="preset-chips">
-                <button class="m3-chip" data-preset="balanced" type="button">Oriole Optimal (Default)</button>
+                <button class="m3-chip" data-preset="balanced" type="button">Oriole Safe &amp; Cool (Default)</button>
                 <button class="m3-chip" data-preset="container" type="button">Heavy / DroidSpaces</button>
                 <button class="m3-chip" data-preset="ptune" type="button">Pixel Tune (GS101)</button>
                 <button class="m3-chip" data-preset="battery" type="button">Battery Saver</button>
@@ -206,6 +217,17 @@
                 <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
               </label>
             </div>
+
+            <div class="m3-row">
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="zram_rt_resize_title">Izinkan Resize zRAM Runtime (swapoff)</span>
+                <span class="m3-row__sub" data-i18n="zram_rt_resize_sub">Matikan untuk mencegah freeze pasca-boot jika ukuran zram0 berbeda</span>
+              </div>
+              <label class="m3-switch">
+                <input type="checkbox" id="cfg-ZRAM_RUNTIME_RESIZE" />
+                <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -241,11 +263,22 @@
                 </div>
                 <div class="m3-row__content">
                   <span class="m3-row__title">madvise odex/vdex Limit</span>
-                  <span class="m3-row__sub" data-i18n="art_madvise_sub">Batas prefetch mmap file bytecode (default stok 100 MB)</span>
+                  <span class="m3-row__sub" data-i18n="art_madvise_sub">Batas prefetch mmap file bytecode (default aman 64 MB)</span>
                 </div>
-                <span class="m3-value-pill" id="val-ART_MADVISE_MB">32 MB</span>
+                <span class="m3-value-pill" id="val-ART_MADVISE_MB">64 MB</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-ART_MADVISE_MB" min="8" max="128" step="8" value="32" />
+              <input class="m3-slider" type="range" id="cfg-ART_MADVISE_MB" min="8" max="128" step="8" value="64" />
+            </div>
+
+            <div class="m3-row">
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="art_boot_props_title">Override Boot Framework Filter</span>
+                <span class="m3-row__sub" data-i18n="art_boot_props_sub">Set dalvik.vm.*dex2oat-filter di system.prop (berisiko memicu odrefresh saat boot)</span>
+              </div>
+              <label class="m3-switch">
+                <input type="checkbox" id="cfg-ART_BOOT_PROPS" />
+                <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
+              </label>
             </div>
           </div>
         </div>
@@ -277,9 +310,9 @@
                   <span class="m3-row__title">PSI Partial Stall</span>
                   <span class="m3-row__sub">ro.lmk.psi_partial_stall_ms (lebih kecil = lebih responsif)</span>
                 </div>
-                <span class="m3-value-pill" id="val-LMKD_PSI_PARTIAL_MS">50 ms</span>
+                <span class="m3-value-pill" id="val-LMKD_PSI_PARTIAL_MS">70 ms</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-LMKD_PSI_PARTIAL_MS" min="20" max="150" step="5" value="50" />
+              <input class="m3-slider" type="range" id="cfg-LMKD_PSI_PARTIAL_MS" min="20" max="150" step="5" value="70" />
             </div>
 
             <div class="m3-row m3-row--stacked">
@@ -288,9 +321,9 @@
                   <span class="m3-row__title">Thrashing Limit</span>
                   <span class="m3-row__sub">ro.lmk.thrashing_limit</span>
                 </div>
-                <span class="m3-value-pill" id="val-LMKD_THRASHING_LIMIT">60</span>
+                <span class="m3-value-pill" id="val-LMKD_THRASHING_LIMIT">80</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-LMKD_THRASHING_LIMIT" min="20" max="150" step="5" value="60" />
+              <input class="m3-slider" type="range" id="cfg-LMKD_THRASHING_LIMIT" min="20" max="150" step="5" value="80" />
             </div>
 
             <div class="m3-row m3-row--stacked">
@@ -299,9 +332,9 @@
                   <span class="m3-row__title">Swap Free Low Threshold</span>
                   <span class="m3-row__sub">ro.lmk.swap_free_low_percentage</span>
                 </div>
-                <span class="m3-value-pill" id="val-LMKD_SWAP_FREE_LOW_PCT">20%</span>
+                <span class="m3-value-pill" id="val-LMKD_SWAP_FREE_LOW_PCT">10%</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-LMKD_SWAP_FREE_LOW_PCT" min="5" max="40" step="1" value="20" />
+              <input class="m3-slider" type="range" id="cfg-LMKD_SWAP_FREE_LOW_PCT" min="5" max="40" step="1" value="10" />
             </div>
           </div>
         </div>
@@ -319,9 +352,9 @@
                   <span class="m3-row__title">vm.swappiness</span>
                   <span class="m3-row__sub" data-i18n="swappiness_sub">Prioritas kompresi halaman anon ke zRAM</span>
                 </div>
-                <span class="m3-value-pill" id="val-VM_SWAPPINESS">80</span>
+                <span class="m3-value-pill" id="val-VM_SWAPPINESS">70</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-VM_SWAPPINESS" min="20" max="150" step="5" value="80" />
+              <input class="m3-slider" type="range" id="cfg-VM_SWAPPINESS" min="20" max="150" step="5" value="70" />
             </div>
 
             <div class="m3-row m3-row--stacked">
@@ -330,9 +363,9 @@
                   <span class="m3-row__title">vm.watermark_scale_factor</span>
                   <span class="m3-row__sub" data-i18n="wm_sub">Headroom kswapd sebelum RAM benar-benar sesak</span>
                 </div>
-                <span class="m3-value-pill" id="val-VM_WATERMARK_SCALE_FACTOR">65</span>
+                <span class="m3-value-pill" id="val-VM_WATERMARK_SCALE_FACTOR">55</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-VM_WATERMARK_SCALE_FACTOR" min="20" max="150" step="5" value="65" />
+              <input class="m3-slider" type="range" id="cfg-VM_WATERMARK_SCALE_FACTOR" min="20" max="150" step="5" value="55" />
             </div>
 
             <div class="m3-row m3-row--stacked">
@@ -450,9 +483,9 @@
                   <span class="m3-row__title">UFS read_ahead_kb</span>
                   <span class="m3-row__sub" data-i18n="ra_sub">Turunkan dari 512 KB stok untuk menghemat page-cache RAM</span>
                 </div>
-                <span class="m3-value-pill" id="val-IO_READ_AHEAD_KB">128 KB</span>
+                <span class="m3-value-pill" id="val-IO_READ_AHEAD_KB">256 KB</span>
               </div>
-              <input class="m3-slider" type="range" id="cfg-IO_READ_AHEAD_KB" min="0" max="512" step="64" value="128" />
+              <input class="m3-slider" type="range" id="cfg-IO_READ_AHEAD_KB" min="0" max="512" step="64" value="256" />
             </div>
 
             <div class="m3-row m3-row--stacked">
@@ -575,6 +608,7 @@
                 <button class="m3-chip" data-val="both" type="button">Compact + Recompile</button>
                 <button class="m3-chip" data-val="recompile" type="button">Recompile Only</button>
                 <button class="m3-chip" data-val="compact" type="button">Compact Only</button>
+                <button class="m3-chip" data-val="diag" type="button">Diag Capture</button>
               </div>
             </div>
           </div>
@@ -598,6 +632,54 @@
                 <input type="checkbox" id="cfg-WATCHDOG_ENABLED" />
                 <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
               </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-header">
+            <h3 class="section-title" data-i18n="diag_title">Forensic Diagnostic Capture</h3>
+            <p class="section-desc" data-i18n="diag_desc">Rekam snapshot lengkap 13 seksi (boot, logcat, dmesg, thermal, PSI, CPUFreq, zRAM) untuk dianalisis &amp; disempurnakan.</p>
+          </div>
+          <div class="m3-group">
+            <div class="m3-row m3-row--stacked">
+              <div class="m3-row__top">
+                <div class="m3-icon-badge m3-icon-badge--error">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5s-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8z"/></svg>
+                </div>
+                <div class="m3-row__content">
+                  <span class="m3-row__title" data-i18n="diag_dur_label">Durasi Sampling Live</span>
+                  <span class="m3-row__sub" data-i18n="diag_dur_sub">Gunakan 30s sambil membuka aplikasi yang terasa lambat</span>
+                </div>
+              </div>
+              <div class="chip-row" id="chips-DIAG_DURATION">
+                <button class="m3-chip" data-val="0" type="button">Instan (0s)</button>
+                <button class="m3-chip selected" data-val="15" type="button">Normal (15s)</button>
+                <button class="m3-chip" data-val="30" type="button">Uji Buka App (30s)</button>
+              </div>
+            </div>
+
+            <div class="m3-row">
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="diag_boot_title">Auto-Capture Setiap Boot</span>
+                <span class="m3-row__sub" data-i18n="diag_boot_sub">Simpan laporan otomatis pasca-boot (--tag=boot) ke /sdcard/Download/Caventus-Logs/</span>
+              </div>
+              <label class="m3-switch">
+                <input type="checkbox" id="cfg-AUTO_BOOT_DIAG" checked />
+                <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
+              </label>
+            </div>
+
+            <div class="m3-row m3-row--stacked">
+              <button class="btn-pill btn-pill--full" id="btn-run-diag" type="button">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+                <span data-i18n="btn_run_diag">Rekam &amp; Ekspor Log Lengkap</span>
+              </button>
+              <div class="btn-row">
+                <button class="btn-pill btn-pill--tonal" id="btn-view-diag" type="button" data-i18n="btn_view_diag">Lihat Terakhir</button>
+                <button class="btn-pill btn-pill--error" id="btn-clear-diag" type="button" data-i18n="btn_clear_diag">Bersihkan</button>
+              </div>
+              <pre class="terminal" id="diag-list-terminal" style="max-height:130px">Memuat daftar arsip diagnostik...</pre>
             </div>
           </div>
         </div>
@@ -677,7 +759,7 @@
               </div>
               <div class="m3-row__content">
                 <span class="m3-row__title" data-i18n="reset_title">Reset ke Default Pixel 6 (oriole)</span>
-                <span class="m3-row__sub" data-i18n="reset_sub">Kembalikan profil Oriole Optimal (4 GB lz77eh, speed-profile, SF off)</span>
+                <span class="m3-row__sub" data-i18n="reset_sub">Kembalikan profil Oriole Safe &amp; Cool (4 GB lz77eh, sched stock, anti-odrefresh)</span>
               </div>
             </div>
 
@@ -686,7 +768,7 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
               </div>
               <div class="m3-row__content">
-                <span class="m3-row__title">Caventus v1.3.0</span>
+                <span class="m3-row__title">Caventus v1.4.0</span>
                 <span class="m3-row__sub">id: caventus_oriole_ram · by aryarifki · overlay-free · GS101</span>
               </div>
             </div>

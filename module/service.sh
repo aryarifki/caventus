@@ -25,4 +25,21 @@ if [ ! -f "$CONF_FILE" ]; then
   "$MODDIR/bin/caventus-ctl.sh" init-defaults >/dev/null 2>&1 || true
 fi
 
-exec "$MODDIR/bin/caventus-ctl.sh" apply
+"$MODDIR/bin/caventus-ctl.sh" diag-boot-snapshot pre >/dev/null 2>&1 || true
+"$MODDIR/bin/caventus-ctl.sh" apply
+"$MODDIR/bin/caventus-ctl.sh" diag-boot-snapshot post >/dev/null 2>&1 || true
+
+AUTO_BOOT_DIAG=1
+if [ -f "$CONF_FILE" ]; then
+  _abd=$(grep -m1 '^AUTO_BOOT_DIAG=' "$CONF_FILE" 2>/dev/null | cut -d= -f2 || echo 1)
+  [ -n "$_abd" ] && AUTO_BOOT_DIAG="$_abd"
+fi
+
+if [ "$AUTO_BOOT_DIAG" = "1" ]; then
+  (
+    sleep 10
+    "$MODDIR/bin/caventus-ctl.sh" diag-capture --duration=0 --export=1 --tag=boot >/dev/null 2>&1
+  ) </dev/null >/dev/null 2>&1 &
+fi
+
+exit 0

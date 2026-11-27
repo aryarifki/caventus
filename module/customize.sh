@@ -47,16 +47,18 @@ set_perm "$MODPATH/service.sh" 0 0 0755
 set_perm "$MODPATH/action.sh" 0 0 0755
 set_perm "$MODPATH/uninstall.sh" 0 0 0755
 set_perm "$MODPATH/bin/caventus-ctl.sh" 0 0 0755
+set_perm "$MODPATH/bin/caventus-diag.sh" 0 0 0755
 [ -d "$MODPATH/webroot" ] && set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
 
 ui_print "----------------------------------------------"
-ui_print "- Installed v1.3.0 cleanly (overlay-free)."
-ui_print "- Oriole Optimal boot-safe defaults will apply"
-ui_print "  automatically on first reboot:"
-ui_print "  4 GB lz77eh + mmd, speed-profile, PSI LMKD,"
-ui_print "  GS101 sched/CPUFreq/UFS/Mali, SF stock (off)."
-ui_print "- Open KernelSU Manager -> WebUI to customize"
-ui_print "  all profiles & run ART speed-profile recompile."
+ui_print "- Installed v1.4.0 cleanly (overlay-free)."
+ui_print "- Thermal-safe & anti-odrefresh defaults:"
+ui_print "  ART boot props OFF, swapoff resize OFF,"
+ui_print "  relaxed LMKD PSI, GS101 stock-safe sched."
+ui_print "- Built-in Forensic Diagnostic Capture exports"
+ui_print "  to /sdcard/Download/Caventus-Logs/ & WebUI."
+ui_print "- Open KernelSU Manager -> WebUI to capture"
+ui_print "  logs, tune profiles & run speed-profile."
 ui_print "- Or tap Action (Run) in KernelSU Manager."
 ui_print "- Reboot to apply all boot-time optimizations."
 ui_print "=============================================="

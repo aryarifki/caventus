@@ -27,6 +27,9 @@ case "${ACTION_MODE:-both}" in
   recompile)
     "$CTL" recompile --filter="${ART_DEX2OAT_FILTER:-speed-profile}" --scope="${RECOMPILE_SCOPE:-all}"
     ;;
+  diag)
+    "$CTL" diag-capture --duration=15 --export=1 --tag=action
+    ;;
   both|*)
     "$CTL" compact
     echo ""
