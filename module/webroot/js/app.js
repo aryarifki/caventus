@@ -30,7 +30,7 @@ const I18N = {
     preset_desc: 'Pilih baseline cepat lalu sesuaikan parameter di bawah.',
     zram_desc: 'Ukuran dan kompresor /dev/block/zram0 (writeback-safe).',
     zram_size_label: 'Ukuran zRAM',
-    zram_size_sub: 'Pixel 6 (8 GB) optimal di 4096 MB – 5120 MB',
+    zram_size_sub: 'Pixel 6 (8 GB) optimal di 5120 MB – 6144 MB (lz77eh)',
     zram_algo_label: 'Algoritma Kompresi',
     zram_algo_sub: 'lz77eh offload HW GS101 (hemat CPU/baterai); zstd paling padat',
     mmd_sync_title: 'Android 17 mmd zRAM Boot Sync',
@@ -133,7 +133,7 @@ const I18N = {
     preset_desc: 'Pick a quick baseline then fine-tune parameters below.',
     zram_desc: 'Size and compressor for /dev/block/zram0 (writeback-safe).',
     zram_size_label: 'zRAM Size',
-    zram_size_sub: 'Pixel 6 (8 GB) sweet spot is 4096 MB – 5120 MB',
+    zram_size_sub: 'Pixel 6 (8 GB) sweet spot is 5120 MB – 6144 MB (lz77eh)',
     zram_algo_label: 'Compression Algorithm',
     zram_algo_sub: 'lz77eh uses GS101 HW offload (lowest CPU/battery); zstd is densest',
     mmd_sync_title: 'Android 17 mmd zRAM Boot Sync',
@@ -548,6 +548,13 @@ function runRecompileStream() {
     if (code === 0) {
       bar.style.width = '100%';
       showSnackbar(currentLang === 'id' ? 'ART recompile selesai' : 'ART recompile completed');
+    } else if (code === 2) {
+      showSnackbar(
+        currentLang === 'id'
+          ? 'Ditahan Thermal Guard — tunggu HP dingin / >2 mnt pasca-boot'
+          : 'Blocked by Thermal Guard — wait until cool / >2m after boot',
+        true,
+      );
     } else {
       showSnackbar(`Recompile exited with code ${code}`);
     }

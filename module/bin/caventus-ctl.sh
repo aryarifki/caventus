@@ -16,7 +16,8 @@ LOCK_FILE="${CAVENTUS_LOCK_FILE:-/data/adb/caventus/recompile.lock}"
 WATCHDOG_PID_FILE="${CAVENTUS_WATCHDOG_PID_FILE:-/data/adb/caventus/watchdog.pid}"
 
 set_defaults() {
-  ZRAM_SIZE_MB=5120
+  CONFIG_SCHEMA_VERSION=2
+  ZRAM_SIZE_MB=6144
   ZRAM_ALGO=lz77eh
   MMD_ZRAM_SYNC=1
   ZRAM_RUNTIME_RESIZE=0
@@ -45,11 +46,11 @@ set_defaults() {
   ART_BOOT_PROPS=0
   LMKD_USE_PSI=true
   LMKD_PSI_PARTIAL_MS=70
-  LMKD_PSI_COMPLETE_MS=700
-  LMKD_THRASHING_LIMIT=80
+  LMKD_PSI_COMPLETE_MS=500
+  LMKD_THRASHING_LIMIT=50
   LMKD_THRASHING_DECAY=10
-  LMKD_SWAP_FREE_LOW_PCT=10
-  LMKD_SWAP_UTIL_MAX=95
+  LMKD_SWAP_FREE_LOW_PCT=15
+  LMKD_SWAP_UTIL_MAX=90
   LMKD_KILL_HEAVIEST=true
   LMKD_KILL_TIMEOUT_MS=150
   LMKD_DOWNGRADE_PRESSURE=80
@@ -88,6 +89,7 @@ validate_config_kv() {
   _k="$1"
   _v="$2"
   case "$_k" in
+    CONFIG_SCHEMA_VERSION)     in_range "$_v" 1 100 ;;
     ZRAM_SIZE_MB)              in_range "$_v" 512 8192 ;;
     ZRAM_ALGO)                 case "$_v" in zstd|lz4|lzo-rle|lzo|lz77eh) return 0 ;; *) return 1 ;; esac ;;
     MMD_ZRAM_SYNC)             case "$_v" in 0|1) return 0 ;; *) return 1 ;; esac ;;
@@ -135,6 +137,7 @@ validate_config_kv() {
 load_config() {
   set_defaults
   [ -f "$CONFIG_ENV" ] || return 0
+  CONFIG_SCHEMA_VERSION=1
   while IFS= read -r _line || [ -n "$_line" ]; do
     case "$_line" in
       ''|'#'*) continue ;;
@@ -155,6 +158,7 @@ write_config_file() {
   _tmp="${CONFIG_ENV}.tmp.$$"
   cat <<EOF > "$_tmp"
 # Caventus Pixel 6 (oriole) configuration
+CONFIG_SCHEMA_VERSION=$CONFIG_SCHEMA_VERSION
 ZRAM_SIZE_MB=$ZRAM_SIZE_MB
 ZRAM_ALGO=$ZRAM_ALGO
 MMD_ZRAM_SYNC=$MMD_ZRAM_SYNC
@@ -856,10 +860,38 @@ cmd_save_config() {
         ;;
     esac
   done
+  CONFIG_SCHEMA_VERSION=2
   write_config_file
   sync_system_prop
   apply_live_props
   log_msg "Saved config & synced system.prop ($# updates)."
+}
+
+migrate_config_if_needed() {
+  [ -f "$CONFIG_ENV" ] || return 0
+  is_uint "$CONFIG_SCHEMA_VERSION" || CONFIG_SCHEMA_VERSION=1
+  [ "$CONFIG_SCHEMA_VERSION" -lt 2 ] || return 0
+
+  _old_ver="$CONFIG_SCHEMA_VERSION"
+  if [ "$ZRAM_ALGO" = "lz77eh" ]; then
+    case "$ZRAM_SIZE_MB" in
+      4096|5120) ZRAM_SIZE_MB=6144 ;;
+    esac
+  fi
+  [ "$LMKD_PSI_COMPLETE_MS" = "700" ] && LMKD_PSI_COMPLETE_MS=500
+  [ "$LMKD_THRASHING_LIMIT" = "80" ] && LMKD_THRASHING_LIMIT=50
+  [ "$LMKD_SWAP_FREE_LOW_PCT" = "10" ] && LMKD_SWAP_FREE_LOW_PCT=15
+  [ "$LMKD_SWAP_UTIL_MAX" = "95" ] && LMKD_SWAP_UTIL_MAX=90
+
+  CONFIG_SCHEMA_VERSION=2
+  write_config_file
+  sync_system_prop
+  log_msg "Migrated config.env schema v${_old_ver} -> v2 (zram=${ZRAM_SIZE_MB}MB/${ZRAM_ALGO}, lmkd=${LMKD_PSI_PARTIAL_MS}/${LMKD_PSI_COMPLETE_MS}/${LMKD_THRASHING_LIMIT}/${LMKD_SWAP_FREE_LOW_PCT}%/${LMKD_SWAP_UTIL_MAX}%)."
+}
+
+cmd_migrate_config() {
+  load_config
+  migrate_config_if_needed
 }
 
 cmd_init_defaults() {
@@ -1043,8 +1075,8 @@ cmd_status_json() {
   printf '"art":{"dex2oat_filter":"%s","image_filter":"%s","madvise_odex_bytes":"%s"},' \
     "$(json_escape "$_a_flt")" "$(json_escape "$_a_img")" "$(json_escape "$_a_mad")"
   printf '"recompile_running":%s,"watchdog_running":%s,' "$_recomp_run" "$_wd_run"
-  printf '"config":{"ZRAM_SIZE_MB":%s,"ZRAM_ALGO":"%s","MMD_ZRAM_SYNC":%s,"ZRAM_RUNTIME_RESIZE":%s,"SWAPOFF_HEADROOM_PCT":%s,"VM_SWAPPINESS":%s,"VM_VFS_CACHE_PRESSURE":%s,"VM_WATERMARK_SCALE_FACTOR":%s,"VM_DIRTY_BACKGROUND_RATIO":%s,"VM_DIRTY_RATIO":%s,"VM_PAGE_CLUSTER":%s,"VM_STAT_INTERVAL":%s,"MGLRU_ENABLED":%s,"MGLRU_MIN_TTL_MS":%s,"THP_MODE":"%s","SCHED_PROFILE":"%s","CPU_RATE_PROFILE":"%s","IO_SCHEDULER":"%s","IO_READ_AHEAD_KB":%s,"IO_NR_REQUESTS":%s,"GPU_POWER_POLICY":"%s","GPU_DVFS_PERIOD_MS":%s,"SF_TUNING_MODE":"%s","WATCHDOG_ENABLED":%s,"ART_DEX2OAT_FILTER":"%s","ART_MADVISE_MB":%s,"ART_BOOT_PROPS":%s,"LMKD_USE_PSI":"%s","LMKD_PSI_PARTIAL_MS":%s,"LMKD_PSI_COMPLETE_MS":%s,"LMKD_THRASHING_LIMIT":%s,"LMKD_THRASHING_DECAY":%s,"LMKD_SWAP_FREE_LOW_PCT":%s,"LMKD_SWAP_UTIL_MAX":%s,"LMKD_KILL_HEAVIEST":"%s","LMKD_KILL_TIMEOUT_MS":%s,"LMKD_DOWNGRADE_PRESSURE":%s,"AUTO_BOOT_DIAG":%s,"ACTION_MODE":"%s","RECOMPILE_SCOPE":"%s"}}\n' \
-    "$ZRAM_SIZE_MB" "$ZRAM_ALGO" "$MMD_ZRAM_SYNC" "$ZRAM_RUNTIME_RESIZE" "$SWAPOFF_HEADROOM_PCT" \
+  printf '"config":{"CONFIG_SCHEMA_VERSION":%s,"ZRAM_SIZE_MB":%s,"ZRAM_ALGO":"%s","MMD_ZRAM_SYNC":%s,"ZRAM_RUNTIME_RESIZE":%s,"SWAPOFF_HEADROOM_PCT":%s,"VM_SWAPPINESS":%s,"VM_VFS_CACHE_PRESSURE":%s,"VM_WATERMARK_SCALE_FACTOR":%s,"VM_DIRTY_BACKGROUND_RATIO":%s,"VM_DIRTY_RATIO":%s,"VM_PAGE_CLUSTER":%s,"VM_STAT_INTERVAL":%s,"MGLRU_ENABLED":%s,"MGLRU_MIN_TTL_MS":%s,"THP_MODE":"%s","SCHED_PROFILE":"%s","CPU_RATE_PROFILE":"%s","IO_SCHEDULER":"%s","IO_READ_AHEAD_KB":%s,"IO_NR_REQUESTS":%s,"GPU_POWER_POLICY":"%s","GPU_DVFS_PERIOD_MS":%s,"SF_TUNING_MODE":"%s","WATCHDOG_ENABLED":%s,"ART_DEX2OAT_FILTER":"%s","ART_MADVISE_MB":%s,"ART_BOOT_PROPS":%s,"LMKD_USE_PSI":"%s","LMKD_PSI_PARTIAL_MS":%s,"LMKD_PSI_COMPLETE_MS":%s,"LMKD_THRASHING_LIMIT":%s,"LMKD_THRASHING_DECAY":%s,"LMKD_SWAP_FREE_LOW_PCT":%s,"LMKD_SWAP_UTIL_MAX":%s,"LMKD_KILL_HEAVIEST":"%s","LMKD_KILL_TIMEOUT_MS":%s,"LMKD_DOWNGRADE_PRESSURE":%s,"AUTO_BOOT_DIAG":%s,"ACTION_MODE":"%s","RECOMPILE_SCOPE":"%s"}}\n' \
+    "$CONFIG_SCHEMA_VERSION" "$ZRAM_SIZE_MB" "$ZRAM_ALGO" "$MMD_ZRAM_SYNC" "$ZRAM_RUNTIME_RESIZE" "$SWAPOFF_HEADROOM_PCT" \
     "$VM_SWAPPINESS" "$VM_VFS_CACHE_PRESSURE" "$VM_WATERMARK_SCALE_FACTOR" "$VM_DIRTY_BACKGROUND_RATIO" "$VM_DIRTY_RATIO" "$VM_PAGE_CLUSTER" "$VM_STAT_INTERVAL" "$MGLRU_ENABLED" "$MGLRU_MIN_TTL_MS" \
     "$THP_MODE" "$SCHED_PROFILE" "$CPU_RATE_PROFILE" "$IO_SCHEDULER" "$IO_READ_AHEAD_KB" "$IO_NR_REQUESTS" "$GPU_POWER_POLICY" "$GPU_DVFS_PERIOD_MS" "$SF_TUNING_MODE" "$WATCHDOG_ENABLED" \
     "$ART_DEX2OAT_FILTER" "$ART_MADVISE_MB" "$ART_BOOT_PROPS" \
@@ -1062,17 +1094,52 @@ cmd_compact() {
   log_msg "zRAM compact + lmkd.reinit done (MemAvailable: $(( ${before_avail:-0} / 1024 )) MB -> $(( ${after_avail:-0} / 1024 )) MB)."
 }
 
+read_soc_temp_c() {
+  _max_c=0
+  for _tz in /sys/class/thermal/thermal_zone*; do
+    [ -r "$_tz/type" ] || continue
+    _t=$(cat "$_tz/type" 2>/dev/null || true)
+    case "$_t" in
+      BIG|MID)
+        _raw=$(cat "$_tz/temp" 2>/dev/null || echo "")
+        if [ -n "$_raw" ]; then
+          _c=$(awk -v r="$_raw" 'BEGIN {
+            r += 0;
+            if (r >= 1000) printf "%.0f\n", int(r / 1000);
+            else if (r > 0) printf "%.0f\n", int(r);
+            else print 0;
+          }' 2>/dev/null || echo 0)
+          if is_uint "$_c" && [ "$_c" -gt "$_max_c" ]; then
+            _max_c=$_c
+          fi
+        fi
+        ;;
+    esac
+  done
+  echo "$_max_c"
+}
+
+read_uptime_int() {
+  if [ -r /proc/uptime ]; then
+    awk '{printf "%.0f\n", int($1)}' /proc/uptime 2>/dev/null || echo 9999
+  else
+    echo 9999
+  fi
+}
+
 cmd_recompile() {
   load_config
   _filter="$ART_DEX2OAT_FILTER"
   _scope="$RECOMPILE_SCOPE"
   _do_reset=0
+  _force=0
 
   for _arg in "$@"; do
     case "$_arg" in
       --filter=*) _filter=${_arg#--filter=} ;;
       --scope=*)  _scope=${_arg#--scope=} ;;
       --reset)    _do_reset=1 ;;
+      --force)    _force=1 ;;
       *)          echo "Unknown recompile option: $_arg" >&2; return 1 ;;
     esac
   done
@@ -1084,6 +1151,23 @@ cmd_recompile() {
   if ! validate_config_kv RECOMPILE_SCOPE "$_scope"; then
     echo "Invalid scope: $_scope" >&2
     return 1
+  fi
+
+  if [ "$_force" -eq 0 ] && [ "${CAVENTUS_SKIP_THERMAL_GUARD:-0}" != "1" ]; then
+    _up_s=$(read_uptime_int)
+    if is_uint "$_up_s" && [ "$_up_s" -lt 120 ]; then
+      _tg_msg="THERMAL_GUARD: Uptime ${_up_s}s < 120s (baru boot). Tunggu minimal 2 menit pasca-boot sebelum ART recompile, atau gunakan --force."
+      log_msg "$_tg_msg"
+      echo "$_tg_msg" >&2
+      return 2
+    fi
+    _soc_c=$(read_soc_temp_c)
+    if is_uint "$_soc_c" && [ "$_soc_c" -ge 70 ]; then
+      _tg_msg="THERMAL_GUARD: Suhu SoC terlalu tinggi (${_soc_c}C >= 70C). Tunggu HP dingin di bawah 70C sebelum ART recompile, atau gunakan --force."
+      log_msg "$_tg_msg"
+      echo "$_tg_msg" >&2
+      return 2
+    fi
   fi
 
   _ldir=$(dirname "$LOCK_FILE")
@@ -1124,6 +1208,13 @@ cmd_recompile() {
 
   for _pkg in $_pkgs; do
     _i=$((_i + 1))
+    if [ "$_force" -eq 0 ] && [ "${CAVENTUS_SKIP_THERMAL_GUARD:-0}" != "1" ] && [ $((_i % 15)) -eq 0 ]; then
+      _soc_c=$(read_soc_temp_c)
+      if is_uint "$_soc_c" && [ "$_soc_c" -ge 78 ]; then
+        echo "[thermal-cooldown] SoC=${_soc_c}C >= 78C — pausing 8s..."
+        sleep 8
+      fi
+    fi
     if [ "$_do_reset" -eq 1 ]; then
       cmd package compile --reset "$_pkg" >/dev/null 2>&1 || true
     fi
@@ -1170,6 +1261,7 @@ case "$cmd" in
   apply)
     _apply_t0=$(date +%s 2>/dev/null || echo 0)
     load_config
+    migrate_config_if_needed
     apply_live_props
     _z_t0=$(date +%s 2>/dev/null || echo 0)
     apply_zram
@@ -1193,6 +1285,9 @@ case "$cmd" in
     ;;
   save-config)
     cmd_save_config "$@"
+    ;;
+  migrate-config)
+    cmd_migrate_config
     ;;
   init-defaults)
     cmd_init_defaults
@@ -1243,7 +1338,7 @@ case "$cmd" in
     cmd_watchdog_loop
     ;;
   help|-h|--help)
-    echo "Usage: $0 {apply|save-config KEY=VAL...|init-defaults|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset]|logs [N]|clear-logs|diag-capture|diag-boot-snapshot|diag-list|diag-read|diag-clear|watchdog-start|watchdog-stop|help}"
+    echo "Usage: $0 {apply|save-config KEY=VAL...|migrate-config|init-defaults|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset] [--force]|logs [N]|clear-logs|diag-capture|diag-boot-snapshot|diag-list|diag-read|diag-clear|watchdog-start|watchdog-stop|help}"
     ;;
   *)
     echo "Unknown command: $cmd" >&2

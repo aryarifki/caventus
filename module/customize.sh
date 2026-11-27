@@ -52,10 +52,10 @@ set_perm "$MODPATH/bin/caventus-diag.sh" 0 0 0755
 [ -d "$MODPATH/webroot" ] && set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
 
 ui_print "----------------------------------------------"
-ui_print "- Installed v1.4.1 cleanly (overlay-free)."
-ui_print "- 64-bit safe mmd sync: 5 GB lz77eh zRAM,"
-ui_print "  anti-odrefresh ART, relaxed PSI LMKD,"
-ui_print "  GS101 stock-safe sched."
+ui_print "- Installed v1.4.2 cleanly (overlay-free)."
+ui_print "- Auto-migrating 64-bit safe mmd sync: 6 GB lz77eh"
+ui_print "  zRAM, anti-odrefresh ART + thermal guard,"
+ui_print "  balanced-responsive PSI LMKD & GS101 stock sched."
 ui_print "- Built-in Forensic Diagnostic Capture exports"
 ui_print "  to /sdcard/Download/Caventus-Logs/ & WebUI."
 ui_print "- Open KernelSU Manager -> WebUI to capture"

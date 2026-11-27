@@ -4,6 +4,16 @@ Modul **KernelSU** (*overlay-free*, tanpa modifikasi `/system` atau `/vendor`) y
 
 ---
 
+## Pembaruan Utama `v1.4.2` (6 GB `lz77eh`, Auto-Migration, Balanced LMKD & Thermal Guard)
+
+1. **Auto-Migrasi `config.env` Schema (`v1` → `v2`):** Config lama dari `v1.4.0`/`v1.4.1` (`4096`/`5120 MB` & LMKD lama) otomatis dimigrasi saat `apply` pertama kali sehingga tidak lagi menimpa `mmd.zram.size` dengan ukuran usang (tetap menghormati angka custom pengguna).
+2. **zRAM Default Naik ke `6144 MB` (6 GB) `lz77eh`:** Rasio hardware GS101 `~2.93×` memberi +1 GB headroom swap dengan biaya RAM fisik hanya ~230 MB untuk meredam `pgmajfault` thrashing.
+3. **Kalibrasi LMKD PSI Balanced-Responsive (`70/500/50/15%/90%`):** Membersihkan aplikasi background secara progresif sebelum `SwapFree` habis tanpa memicu badai kill.
+4. **Thermal & Uptime Guard pada ART Recompile (`caventus-ctl.sh recompile`):** Menahan kompilasi `speed-profile` bila `uptime < 120s` atau suhu SoC `>= 70°C` (kecuali `--force`) serta cooldown otomatis tiap 15 paket jika SoC `>= 78°C`.
+5. **Diagnostik `caventus-diag.sh` Diperkuat:** Menambah `dumpsys meminfo --short` di Section 09, logging `rc=` + `logcat -g` probe di Section 11, dan multi-fallback `/system/bin/dmesg` → `toybox dmesg` → `busybox dmesg` di Section 12.
+
+---
+
 ## Pembaruan Utama `v1.4.1` (Hotfix 32-bit `mksh`, 5 GB `lz77eh`, Nav Indicator Fix)
 
 1. **Hotfix Overflow 32-bit `mksh` Android:** Seluruh konversi MB↔byte zRAM (`mb_to_bytes`/`bytes_to_mb`) & `ZRAM_FULL_PCT` kini memakai `awk` 64-bit agar ukuran >= 4 GB (`5368709120`) tidak lagi overflow menjadi `0` di `/system/bin/sh` Android.
@@ -14,13 +24,13 @@ Modul **KernelSU** (*overlay-free*, tanpa modifikasi `/system` atau `/vendor`) y
 
 ---
 
-## Profil Default Otomatis `v1.4.1` (*Oriole Safe & Cool*)
+## Profil Default Otomatis `v1.4.2` (*Oriole Safe & Cool*)
 
-| Komponen | Nilai Default (`v1.4.1`) | Keterangan |
+| Komponen | Nilai Default (`v1.4.2`) | Keterangan |
 | :--- | :--- | :--- |
-| **zRAM + `mmd`** | **`5120 MB` (`5368709120` B)**, `lz77eh`, `mmd_sync=1`, `runtime_resize=0` | Hardware Emerald Hill GS101 tanpa overflow 32-bit dan tanpa `swapoff` freeze pasca-boot. |
-| **ART / `dex2oat`** | `pm.dexopt=speed-profile`, `madvise=64 MB`, `ART_BOOT_PROPS=0` | Tanpa memicu `odrefresh` saat boot. |
-| **LMKD (PSI)** | `partial=70ms`, `complete=700ms`, `thrashing=80`, `swap_low=10%`, `swap_util=95%` | Menghindari kill berulang yang membuat app lambat dibuka. |
+| **zRAM + `mmd`** | **`6144 MB` (`6442450944` B)**, `lz77eh`, `mmd_sync=1`, `runtime_resize=0` | Hardware Emerald Hill GS101 + auto-migrasi schema v2 tanpa `swapoff` freeze pasca-boot. |
+| **ART / `dex2oat`** | `pm.dexopt=speed-profile`, `madvise=64 MB`, `ART_BOOT_PROPS=0` | Tanpa memicu `odrefresh` saat boot + Thermal/Uptime Guard pada `recompile`. |
+| **LMKD (PSI)** | `partial=70ms`, `complete=500ms`, `thrashing=50`, `swap_low=15%`, `swap_util=90%` | Balanced-responsive: menjaga cache & melepas app berat sebelum zRAM jenuh. |
 | **Kernel VM & MGLRU** | `swappiness=70`, `watermark_scale=55`, `dirty=10/20`, `MGLRU=1 (0x0003)`, `THP=never` | Seimbang dan hemat RAM tanpa memicu direct reclaim / thermal tinggi. |
 | **GS101 Sched & CPUFreq** | `SCHED_PROFILE=stock`, `CPU_RATE_PROFILE=stock` | Bebas panas berlebih; profil `balanced`/`responsive` tetap tersedia opt-in. |
 | **UFS 3.1 & Mali** | `mq-deadline`, `read_ahead=256 KB`, `nr_requests=128`, `async_depth=64`, `adaptive` | `iostats` dipertahankan aktif untuk analisis diagnostik. |
@@ -30,7 +40,7 @@ Modul **KernelSU** (*overlay-free*, tanpa modifikasi `/system` atau `/vendor`) y
 
 ## Cara Mengambil & Mengirim Log Diagnostik Lengkap
 
-1. Flash **`caventus-oriole-v1.4.1.zip`** di **KernelSU Manager** → **Modules** → **Install**, lalu **Reboot**.
+1. Flash **`caventus-oriole-v1.4.2.zip`** di **KernelSU Manager** → **Modules** → **Install**, lalu **Reboot**.
 2. Buka **KernelSU Manager** → tap **WebUI** pada Caventus → buka tab **Tools** (atau tap *Tangkap Log Diagnostik (15s)* di **Home**).
 3. Pilih durasi (**Instan 0s**, **Normal 15s**, atau **Uji Buka App 30s** sambil membuka aplikasi yang terasa lambat) → tap **Rekam & Ekspor Log Lengkap**.
 4. File laporan lengkap tersimpan di **`/sdcard/Download/Caventus-Logs/latest-caventus-diag.log`** dan bisa langsung dilihat/disalin dari modal WebUI.

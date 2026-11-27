@@ -24,12 +24,12 @@ REQUIRED_SYSTEM_PROPS = {
     "ro.lmk.use_psi": "true",
     "ro.lmk.use_minfree_levels": "false",
     "ro.lmk.psi_partial_stall_ms": "70",
-    "ro.lmk.psi_complete_stall_ms": "700",
-    "ro.lmk.thrashing_limit": "80",
-    "ro.lmk.swap_free_low_percentage": "10",
-    "ro.lmk.swap_util_max": "95",
+    "ro.lmk.psi_complete_stall_ms": "500",
+    "ro.lmk.thrashing_limit": "50",
+    "ro.lmk.swap_free_low_percentage": "15",
+    "ro.lmk.swap_util_max": "90",
     "mmd.zram.enabled": "true",
-    "mmd.zram.size": "5368709120",
+    "mmd.zram.size": "6442450944",
     "mmd.zram.comp_algorithm": "lz77eh",
 }
 
@@ -80,8 +80,8 @@ def check_module_prop() -> str:
     missing = REQUIRED_PROP_KEYS - set(props)
     assert not missing, f"Missing module.prop keys: {missing}"
     assert props["id"] == "caventus_oriole_ram"
-    assert props["version"] == "v1.4.1"
-    assert props["versionCode"] == "141"
+    assert props["version"] == "v1.4.2"
+    assert props["versionCode"] == "142"
     print(f"PASS: module.prop ({props['id']} {props['version']})")
     return props["version"]
 
@@ -131,9 +131,11 @@ if token_in_list "noop" "[mq-deadline] kyber bfq none" >/dev/null 2>&1; then exi
 # 2. 64-bit awk byte math & can_safely_swapoff
 [ "$(mb_to_bytes 4096)" = "4294967296" ]
 [ "$(mb_to_bytes 5120)" = "5368709120" ]
+[ "$(mb_to_bytes 6144)" = "6442450944" ]
 [ "$(mb_to_bytes 8192)" = "8589934592" ]
 [ "$(bytes_to_mb 5368709120)" = "5120" ]
-is_pos_num 5368709120
+[ "$(bytes_to_mb 6442450944)" = "6144" ]
+is_pos_num 6442450944
 if is_pos_num 0 >/dev/null 2>&1; then exit 1; fi
 can_safely_swapoff 307200 3072000 80
 if can_safely_swapoff 2764800 1254016 80; then exit 1; fi
@@ -185,6 +187,7 @@ export CAVENTUS_NO_WATCHDOG=1
 mkdir -p "{sb}/proj_export"
 
 sh "{ctl}" init-defaults >/dev/null
+grep -q '^CONFIG_SCHEMA_VERSION=2$' "{sb}/config.env"
 grep -q '^ZRAM_ALGO=lz77eh$' "{sb}/config.env"
 grep -q '^ZRAM_RUNTIME_RESIZE=0$' "{sb}/config.env"
 grep -q '^ART_BOOT_PROPS=0$' "{sb}/config.env"
@@ -195,11 +198,46 @@ grep -q '^SF_TUNING_MODE=off$' "{sb}/config.env"
 grep -q '^VM_WATERMARK_SCALE_FACTOR=55$' "{sb}/config.env"
 grep -q '^IO_NR_REQUESTS=128$' "{sb}/config.env"
 grep -q '^mmd.zram.comp_algorithm=lz77eh$' "{sb}/mod/system.prop"
-grep -q '^mmd.zram.size=5368709120$' "{sb}/mod/system.prop"
-grep -q '^ZRAM_SIZE_MB=5120$' "{sb}/config.env"
+grep -q '^mmd.zram.size=6442450944$' "{sb}/mod/system.prop"
+grep -q '^ro.lmk.psi_complete_stall_ms=500$' "{sb}/mod/system.prop"
+grep -q '^ro.lmk.thrashing_limit=50$' "{sb}/mod/system.prop"
+grep -q '^ro.lmk.swap_free_low_percentage=15$' "{sb}/mod/system.prop"
+grep -q '^ro.lmk.swap_util_max=90$' "{sb}/mod/system.prop"
+grep -q '^ZRAM_SIZE_MB=6144$' "{sb}/config.env"
 if grep -q '^ro\\.surface_flinger\\.' "{sb}/mod/system.prop"; then exit 1; fi
 if grep -q '^dalvik\\.vm\\.dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
 if grep -q '^dalvik\\.vm\\.image-dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
+
+# 4b. Schema migration tests (legacy defaults upgrade vs custom preservation)
+cat <<'EOF' > "{sb}/config.env"
+ZRAM_SIZE_MB=4096
+ZRAM_ALGO=lz77eh
+LMKD_PSI_COMPLETE_MS=700
+LMKD_THRASHING_LIMIT=80
+LMKD_SWAP_FREE_LOW_PCT=10
+LMKD_SWAP_UTIL_MAX=95
+EOF
+sh "{ctl}" migrate-config >/dev/null
+grep -q '^CONFIG_SCHEMA_VERSION=2$' "{sb}/config.env"
+grep -q '^ZRAM_SIZE_MB=6144$' "{sb}/config.env"
+grep -q '^LMKD_PSI_COMPLETE_MS=500$' "{sb}/config.env"
+grep -q '^LMKD_THRASHING_LIMIT=50$' "{sb}/config.env"
+grep -q '^LMKD_SWAP_FREE_LOW_PCT=15$' "{sb}/config.env"
+grep -q '^LMKD_SWAP_UTIL_MAX=90$' "{sb}/config.env"
+grep -q '^mmd.zram.size=6442450944$' "{sb}/mod/system.prop"
+
+cat <<'EOF' > "{sb}/config.env"
+ZRAM_SIZE_MB=3072
+ZRAM_ALGO=lz77eh
+LMKD_THRASHING_LIMIT=45
+EOF
+sh "{ctl}" migrate-config >/dev/null
+grep -q '^CONFIG_SCHEMA_VERSION=2$' "{sb}/config.env"
+grep -q '^ZRAM_SIZE_MB=3072$' "{sb}/config.env"
+grep -q '^LMKD_THRASHING_LIMIT=45$' "{sb}/config.env"
+grep -q '^mmd.zram.size=3221225472$' "{sb}/mod/system.prop"
+
+sh "{ctl}" init-defaults >/dev/null
 
 sh "{ctl}" save-config ZRAM_SIZE_MB=5120 ART_DEX2OAT_FILTER=speed ART_BOOT_PROPS=1 LMKD_PSI_PARTIAL_MS=40 SCHED_PROFILE=ptune SF_TUNING_MODE=ptune IO_READ_AHEAD_KB=0 >/dev/null
 grep -q '^ZRAM_SIZE_MB=5120$' "{sb}/config.env"
@@ -240,6 +278,10 @@ done
 for metric in ODREFRESH_HITS LMKD_KILL_HITS SLOW_DISPLAYED_HITS AVC_DENIED_HITS; do
   grep -qE "^${{metric}}=[0-9]+$" "{sb}/export/latest-caventus-diag.log"
 done
+grep -qE '^\\[dmesg_bin=.* rc=[0-9]+ raw_lines=[0-9]+\\]$' "{sb}/export/latest-caventus-diag.log"
+if command -v logcat >/dev/null 2>&1 || [ -x /system/bin/logcat ]; then
+  grep -qE '^\\[logcat_bin=.* rc=[0-9]+ raw_lines=[0-9]+\\]$' "{sb}/export/latest-caventus-diag.log"
+fi
 sh "{ctl}" diag-list | grep -q 'caventus-diag-.*-ci\\.log'
 sh "{ctl}" diag-read --tail=20 | grep -q 'AUTOMATED DIAGNOSTIC SUMMARY'
 if sh "{ctl}" diag-read ../config.env >/dev/null 2>&1; then exit 1; fi

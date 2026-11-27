@@ -432,6 +432,11 @@ cmd_capture() {
     else
       ps -eo pid,ppid,user,rss,vsz,s,comm 2>/dev/null | awk 'NR==1{print; next} {print | "sort -k4 -rn | head -n 30"}' || true
     fi
+    if command -v dumpsys >/dev/null 2>&1; then
+      echo ""
+      echo "[dumpsys meminfo --short]"
+      dumpsys meminfo --short 2>/dev/null | head -n 65 || echo "(dumpsys meminfo unavailable)"
+    fi
     echo ""
   } >> "$_out"
 
@@ -507,15 +512,28 @@ cmd_capture() {
   {
     echo "===== SECTION 11: LOGCAT FORENSICS (FILTERED) ====="
     if [ -n "$_lc_bin" ] && [ -x "$_lc_bin" ]; then
-      "$_lc_bin" -b main -b system -b events -b crash -d -v threadtime -t 6000 > "$_lc_tmp" 2>"$_lc_err" || true
+      _lc_rc=0
+      "$_lc_bin" -b main -b system -b events -b crash -d -v threadtime -t 6000 > "$_lc_tmp" 2>"$_lc_err"
+      _lc_rc=$?
       if [ ! -s "$_lc_tmp" ]; then
-        "$_lc_bin" -d -v threadtime > "$_lc_tmp" 2>>"$_lc_err" || true
+        "$_lc_bin" -d -v threadtime > "$_lc_tmp" 2>>"$_lc_err"
+        _lc_rc=$?
+      fi
+      if [ ! -s "$_lc_tmp" ]; then
+        "$_lc_bin" -b all -d -t 3000 > "$_lc_tmp" 2>>"$_lc_err"
+        _lc_rc=$?
       fi
       _lc_lines=$(wc -l < "$_lc_tmp" 2>/dev/null | tr -d ' ' || echo 0)
-      echo "[logcat_bin=$_lc_bin raw_lines=${_lc_lines:-0}]"
-      if [ "${_lc_lines:-0}" -eq 0 ] && [ -s "$_lc_err" ]; then
-        echo "[logcat_stderr]"
-        cat "$_lc_err" 2>/dev/null || true
+      echo "[logcat_bin=$_lc_bin rc=$_lc_rc raw_lines=${_lc_lines:-0}]"
+      if [ "${_lc_lines:-0}" -eq 0 ]; then
+        echo "[logcat_probe]"
+        ls -l "$_lc_bin" 2>&1 || true
+        "$_lc_bin" -g 2>&1 || true
+        getprop 2>/dev/null | grep -iE 'logd|log\.tag' | head -n 20 || true
+        if [ -s "$_lc_err" ]; then
+          echo "[logcat_stderr]"
+          cat "$_lc_err" 2>/dev/null || true
+        fi
       fi
       echo "--- [ART / odrefresh / dex2oat / artd] ---"
       grep -iE 'odrefresh|dex2oat|artd|odsign' "$_lc_tmp" 2>/dev/null | tail -n 120 || true
@@ -546,22 +564,47 @@ cmd_capture() {
   _avc_hits=0
   _dm_tmp="$DIAG_DIR/.dm.tmp.$$"
   _dm_err="$DIAG_DIR/.dm.err.$$"
-  _dm_bin="/system/bin/dmesg"
-  [ -x "$_dm_bin" ] || _dm_bin=$(command -v dmesg 2>/dev/null || true)
+  _dm_used="none"
+  _dm_rc=127
   _dm_lines=0
   {
     echo "===== SECTION 12: KERNEL DMESG FORENSICS (FILTERED) ====="
-    if [ -n "$_dm_bin" ] && [ -x "$_dm_bin" ]; then
-      "$_dm_bin" > "$_dm_tmp" 2>"$_dm_err" || true
-      _dm_lines=$(wc -l < "$_dm_tmp" 2>/dev/null | tr -d ' ' || echo 0)
-      echo "[dmesg_bin=$_dm_bin raw_lines=${_dm_lines:-0}]"
-      if [ "${_dm_lines:-0}" -eq 0 ] && [ -s "$_dm_err" ]; then
+    if [ -x /system/bin/dmesg ]; then
+      _dm_used="/system/bin/dmesg"
+      /system/bin/dmesg > "$_dm_tmp" 2>"$_dm_err"
+      _dm_rc=$?
+    fi
+    if [ ! -s "$_dm_tmp" ] && command -v toybox >/dev/null 2>&1; then
+      _dm_used="toybox dmesg"
+      toybox dmesg > "$_dm_tmp" 2>>"$_dm_err"
+      _dm_rc=$?
+    fi
+    for _bb in /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/busybox; do
+      if [ ! -s "$_dm_tmp" ] && [ -x "$_bb" ]; then
+        _dm_used="$_bb dmesg"
+        "$_bb" dmesg > "$_dm_tmp" 2>>"$_dm_err"
+        _dm_rc=$?
+      fi
+    done
+    if [ ! -s "$_dm_tmp" ] && command -v dmesg >/dev/null 2>&1; then
+      _dm_used=$(command -v dmesg 2>/dev/null || echo dmesg)
+      "$_dm_used" > "$_dm_tmp" 2>>"$_dm_err"
+      _dm_rc=$?
+    fi
+    _dm_lines=$(wc -l < "$_dm_tmp" 2>/dev/null | tr -d ' ' || echo 0)
+    echo "[dmesg_bin=$_dm_used rc=$_dm_rc raw_lines=${_dm_lines:-0}]"
+    if [ "${_dm_lines:-0}" -eq 0 ]; then
+      echo "[dmesg_probe]"
+      ls -l /system/bin/dmesg 2>&1 || true
+      echo "dmesg_restrict=$(read_first_line /proc/sys/kernel/dmesg_restrict)"
+      echo "id=$(id 2>/dev/null || echo unknown)"
+      if [ -s "$_dm_err" ]; then
         echo "[dmesg_stderr]"
         cat "$_dm_err" 2>/dev/null || true
       fi
+    fi
+    if [ -s "$_dm_tmp" ]; then
       grep -iE 'zram|swap|oom|lmk|thermal|throttle|cpufreq|vendor_sched|mali|ufshcd|avc:|denied|hung_task|blocked for more than' "$_dm_tmp" 2>/dev/null | tail -n 250 || true
-    else
-      echo "(dmesg binary unavailable)"
     fi
     echo ""
   } >> "$_out"
