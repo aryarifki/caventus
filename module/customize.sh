@@ -28,8 +28,9 @@ MEM_TOTAL_KB=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null)
 if [ -r /sys/block/zram0/disksize ]; then
   CUR_ZRAM=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
   case "$CUR_ZRAM" in ''|*[!0-9]*) CUR_ZRAM=0 ;; esac
+  CUR_ZRAM_MB=$(awk -v b="$CUR_ZRAM" 'BEGIN { printf "%.0f", int(b / 1048576) }' 2>/dev/null || echo 0)
   CUR_ALGO=$(cat /sys/block/zram0/comp_algorithm 2>/dev/null || echo "unknown")
-  ui_print "- Current zRAM: $((CUR_ZRAM / 1048576)) MB | algos: $CUR_ALGO"
+  ui_print "- Current zRAM: ${CUR_ZRAM_MB} MB | algos: $CUR_ALGO"
   case "$CUR_ALGO" in
     *lz77eh*) ui_print "- lz77eh HW   : YES (GS101 Emerald Hill)" ;;
     *)        ui_print "- lz77eh HW   : NO (will fallback to zstd/lz4)" ;;
@@ -51,10 +52,10 @@ set_perm "$MODPATH/bin/caventus-diag.sh" 0 0 0755
 [ -d "$MODPATH/webroot" ] && set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
 
 ui_print "----------------------------------------------"
-ui_print "- Installed v1.4.0 cleanly (overlay-free)."
-ui_print "- Thermal-safe & anti-odrefresh defaults:"
-ui_print "  ART boot props OFF, swapoff resize OFF,"
-ui_print "  relaxed LMKD PSI, GS101 stock-safe sched."
+ui_print "- Installed v1.4.1 cleanly (overlay-free)."
+ui_print "- 64-bit safe mmd sync: 5 GB lz77eh zRAM,"
+ui_print "  anti-odrefresh ART, relaxed PSI LMKD,"
+ui_print "  GS101 stock-safe sched."
 ui_print "- Built-in Forensic Diagnostic Capture exports"
 ui_print "  to /sdcard/Download/Caventus-Logs/ & WebUI."
 ui_print "- Open KernelSU Manager -> WebUI to capture"

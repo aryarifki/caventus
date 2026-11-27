@@ -1,6 +1,6 @@
 id=caventus_oriole_ram
 name=Caventus — Pixel 6 (oriole) RAM Optimizer
-version=v1.4.0
-versionCode=140
+version=v1.4.1
+versionCode=141
 author=aryarifki
-description=Pixel 6 (oriole/gs101) boot-safe, thermal-safe RAM & system optimizer with Material 3 Expressive KSU WebUI & forensic diagnostic log capture: anti-odrefresh ART, safe 4 GB lz77eh mmd zRAM, relaxed PSI LMKD, GS101 stock-safe sched/CPUFreq, and 1-tap logcat/dmesg/PSI/thermal telemetry export.
+description=Pixel 6 (oriole/gs101) boot-safe, thermal-safe RAM & system optimizer with Material 3 Expressive KSU WebUI & forensic diagnostic log capture: 5 GB lz77eh mmd zRAM (64-bit mksh-safe math), anti-odrefresh ART, relaxed PSI LMKD, GS101 stock-safe sched/CPUFreq, and 1-tap logcat/dmesg/PSI/thermal telemetry export.

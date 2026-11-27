@@ -82,7 +82,7 @@ export const AMOLED_OVERRIDES = {
 
 export const TUNING_PRESETS = {
   balanced: {
-    ZRAM_SIZE_MB: 4096,
+    ZRAM_SIZE_MB: 5120,
     ZRAM_ALGO: 'lz77eh',
     MMD_ZRAM_SYNC: 1,
     ZRAM_RUNTIME_RESIZE: 0,

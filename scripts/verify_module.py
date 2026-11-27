@@ -29,7 +29,7 @@ REQUIRED_SYSTEM_PROPS = {
     "ro.lmk.swap_free_low_percentage": "10",
     "ro.lmk.swap_util_max": "95",
     "mmd.zram.enabled": "true",
-    "mmd.zram.size": "4294967296",
+    "mmd.zram.size": "5368709120",
     "mmd.zram.comp_algorithm": "lz77eh",
 }
 
@@ -80,8 +80,8 @@ def check_module_prop() -> str:
     missing = REQUIRED_PROP_KEYS - set(props)
     assert not missing, f"Missing module.prop keys: {missing}"
     assert props["id"] == "caventus_oriole_ram"
-    assert props["version"] == "v1.4.0"
-    assert props["versionCode"] == "140"
+    assert props["version"] == "v1.4.1"
+    assert props["versionCode"] == "141"
     print(f"PASS: module.prop ({props['id']} {props['version']})")
     return props["version"]
 
@@ -128,7 +128,13 @@ token_in_list "kyber" "[mq-deadline] kyber bfq none"
 token_in_list "mq-deadline" "[mq-deadline] kyber bfq none"
 if token_in_list "noop" "[mq-deadline] kyber bfq none" >/dev/null 2>&1; then exit 1; fi
 
-# 2. can_safely_swapoff
+# 2. 64-bit awk byte math & can_safely_swapoff
+[ "$(mb_to_bytes 4096)" = "4294967296" ]
+[ "$(mb_to_bytes 5120)" = "5368709120" ]
+[ "$(mb_to_bytes 8192)" = "8589934592" ]
+[ "$(bytes_to_mb 5368709120)" = "5120" ]
+is_pos_num 5368709120
+if is_pos_num 0 >/dev/null 2>&1; then exit 1; fi
 can_safely_swapoff 307200 3072000 80
 if can_safely_swapoff 2764800 1254016 80; then exit 1; fi
 
@@ -189,6 +195,8 @@ grep -q '^SF_TUNING_MODE=off$' "{sb}/config.env"
 grep -q '^VM_WATERMARK_SCALE_FACTOR=55$' "{sb}/config.env"
 grep -q '^IO_NR_REQUESTS=128$' "{sb}/config.env"
 grep -q '^mmd.zram.comp_algorithm=lz77eh$' "{sb}/mod/system.prop"
+grep -q '^mmd.zram.size=5368709120$' "{sb}/mod/system.prop"
+grep -q '^ZRAM_SIZE_MB=5120$' "{sb}/config.env"
 if grep -q '^ro\\.surface_flinger\\.' "{sb}/mod/system.prop"; then exit 1; fi
 if grep -q '^dalvik\\.vm\\.dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
 if grep -q '^dalvik\\.vm\\.image-dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
@@ -228,6 +236,9 @@ test -s "{sb}/export/latest-caventus-diag.log"
 test -s "{sb}/proj_export/latest-caventus-diag.log"
 for sec in 01 02 03 04 05 06 07 08 09 10 11 12 13; do
   grep -q "SECTION ${{sec}}:" "{sb}/export/latest-caventus-diag.log"
+done
+for metric in ODREFRESH_HITS LMKD_KILL_HITS SLOW_DISPLAYED_HITS AVC_DENIED_HITS; do
+  grep -qE "^${{metric}}=[0-9]+$" "{sb}/export/latest-caventus-diag.log"
 done
 sh "{ctl}" diag-list | grep -q 'caventus-diag-.*-ci\\.log'
 sh "{ctl}" diag-read --tail=20 | grep -q 'AUTOMATED DIAGNOSTIC SUMMARY'

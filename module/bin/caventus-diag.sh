@@ -1,6 +1,9 @@
 #!/system/bin/sh
 # Caventus forensic diagnostic log capturer for Pixel 6 (oriole / GS101)
 
+PATH="/system/bin:/system/xbin:/vendor/bin:/data/adb/ksu/bin:$PATH"
+export PATH
+
 if [ -n "${CAVENTUS_MODDIR:-}" ]; then
   MODDIR="$CAVENTUS_MODDIR"
 else
@@ -24,6 +27,22 @@ is_uint() {
 in_range() {
   is_uint "$1" || return 1
   [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]
+}
+
+count_matches() {
+  _cm_pat="$1"
+  _cm_file="$2"
+  if [ ! -r "$_cm_file" ]; then
+    echo 0
+    return 0
+  fi
+  _cm_res=$(grep -ciE "$_cm_pat" "$_cm_file" 2>/dev/null)
+  _cm_res=$(printf '%s' "$_cm_res" | tr -cd '0-9')
+  echo "${_cm_res:-0}"
+}
+
+pct_of() {
+  awk -v a="$1" -v b="$2" 'BEGIN { if (b+0 > 0) printf "%.0f\n", int((a * 100) / b); else print 0 }'
 }
 
 read_first_line() {
@@ -481,10 +500,23 @@ cmd_capture() {
   _lmk_hits=0
   _slow_hits=0
   _lc_tmp="$DIAG_DIR/.lc.tmp.$$"
+  _lc_err="$DIAG_DIR/.lc.err.$$"
+  _lc_bin="/system/bin/logcat"
+  [ -x "$_lc_bin" ] || _lc_bin=$(command -v logcat 2>/dev/null || true)
+  _lc_lines=0
   {
     echo "===== SECTION 11: LOGCAT FORENSICS (FILTERED) ====="
-    if command -v logcat >/dev/null 2>&1; then
-      logcat -d -v threadtime -t 6000 > "$_lc_tmp" 2>/dev/null || true
+    if [ -n "$_lc_bin" ] && [ -x "$_lc_bin" ]; then
+      "$_lc_bin" -b main -b system -b events -b crash -d -v threadtime -t 6000 > "$_lc_tmp" 2>"$_lc_err" || true
+      if [ ! -s "$_lc_tmp" ]; then
+        "$_lc_bin" -d -v threadtime > "$_lc_tmp" 2>>"$_lc_err" || true
+      fi
+      _lc_lines=$(wc -l < "$_lc_tmp" 2>/dev/null | tr -d ' ' || echo 0)
+      echo "[logcat_bin=$_lc_bin raw_lines=${_lc_lines:-0}]"
+      if [ "${_lc_lines:-0}" -eq 0 ] && [ -s "$_lc_err" ]; then
+        echo "[logcat_stderr]"
+        cat "$_lc_err" 2>/dev/null || true
+      fi
       echo "--- [ART / odrefresh / dex2oat / artd] ---"
       grep -iE 'odrefresh|dex2oat|artd|odsign' "$_lc_tmp" 2>/dev/null | tail -n 120 || true
       echo "--- [LMKD / lowmemorykiller] ---"
@@ -498,32 +530,45 @@ cmd_capture() {
       echo "--- [SurfaceFlinger / HWComposer / Choreographer] ---"
       grep -iE 'SurfaceFlinger|HWComposer|Choreographer|Skipped [0-9]+ frames' "$_lc_tmp" 2>/dev/null | tail -n 120 || true
     else
-      echo "(logcat unavailable in sandbox)"
+      echo "(logcat binary unavailable)"
     fi
     echo ""
   } >> "$_out"
 
   if [ -r "$_lc_tmp" ]; then
-    _od_hits=$(grep -ciE 'odrefresh.*Compiling|dex2oat.*(filter|compiling)' "$_lc_tmp" 2>/dev/null || echo 0)
-    _lmk_hits=$(grep -ciE 'lowmemorykiller.*Kill|lmkd.*Kill' "$_lc_tmp" 2>/dev/null || echo 0)
-    _slow_hits=$(grep -ciE 'Displayed .*\+([3-9][0-9]s|[0-9]+s.*|1[0-9]{4,}ms|[2-9][0-9]{4,}ms)|ANR in' "$_lc_tmp" 2>/dev/null || echo 0)
-    rm -f "$_lc_tmp" 2>/dev/null || true
+    _od_hits=$(count_matches 'odrefresh.*Compiling|dex2oat.*(filter|compiling)' "$_lc_tmp")
+    _lmk_hits=$(count_matches 'lowmemorykiller.*Kill|lmkd.*Kill' "$_lc_tmp")
+    _slow_hits=$(count_matches 'Displayed .*\+([3-9][0-9]s|[0-9]+s.*|1[0-9]{4,}ms|[2-9][0-9]{4,}ms)|ANR in' "$_lc_tmp")
   fi
+  rm -f "$_lc_tmp" "$_lc_err" 2>/dev/null || true
 
   echo "STAGE=12/13 Extracting Kernel dmesg Forensics"
   _avc_hits=0
+  _dm_tmp="$DIAG_DIR/.dm.tmp.$$"
+  _dm_err="$DIAG_DIR/.dm.err.$$"
+  _dm_bin="/system/bin/dmesg"
+  [ -x "$_dm_bin" ] || _dm_bin=$(command -v dmesg 2>/dev/null || true)
+  _dm_lines=0
   {
     echo "===== SECTION 12: KERNEL DMESG FORENSICS (FILTERED) ====="
-    if command -v dmesg >/dev/null 2>&1; then
-      dmesg 2>/dev/null | grep -iE 'zram|swap|oom|lmk|thermal|throttle|cpufreq|vendor_sched|mali|ufshcd|avc:|denied|hung_task|blocked for more than' | tail -n 250 || echo "(dmesg empty or restricted)"
+    if [ -n "$_dm_bin" ] && [ -x "$_dm_bin" ]; then
+      "$_dm_bin" > "$_dm_tmp" 2>"$_dm_err" || true
+      _dm_lines=$(wc -l < "$_dm_tmp" 2>/dev/null | tr -d ' ' || echo 0)
+      echo "[dmesg_bin=$_dm_bin raw_lines=${_dm_lines:-0}]"
+      if [ "${_dm_lines:-0}" -eq 0 ] && [ -s "$_dm_err" ]; then
+        echo "[dmesg_stderr]"
+        cat "$_dm_err" 2>/dev/null || true
+      fi
+      grep -iE 'zram|swap|oom|lmk|thermal|throttle|cpufreq|vendor_sched|mali|ufshcd|avc:|denied|hung_task|blocked for more than' "$_dm_tmp" 2>/dev/null | tail -n 250 || true
     else
-      echo "(dmesg unavailable)"
+      echo "(dmesg binary unavailable)"
     fi
     echo ""
   } >> "$_out"
-  if command -v dmesg >/dev/null 2>&1; then
-    _avc_hits=$(dmesg 2>/dev/null | grep -c 'avc:.*denied' 2>/dev/null || echo 0)
+  if [ -r "$_dm_tmp" ]; then
+    _avc_hits=$(count_matches 'avc:.*denied' "$_dm_tmp")
   fi
+  rm -f "$_dm_tmp" "$_dm_err" 2>/dev/null || true
 
   echo "STAGE=13/13 Computing Automated Diagnostic Summary"
   _cool_max=0
@@ -545,10 +590,7 @@ cmd_capture() {
 
   _zdisk=$(read_first_line /sys/block/zram0/disksize)
   _zorig=$(awk '{print $1}' /sys/block/zram0/mm_stat 2>/dev/null || echo 0)
-  _zpct=0
-  if is_uint "$_zdisk" && is_uint "$_zorig" && [ "$_zdisk" -gt 0 ]; then
-    _zpct=$((_zorig * 100 / _zdisk))
-  fi
+  _zpct=$(pct_of "$_zorig" "$_zdisk")
 
   _mmd_req=$(safe_getprop mmd.zram.size)
   _zmismatch="0"

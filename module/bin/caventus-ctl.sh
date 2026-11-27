@@ -16,7 +16,7 @@ LOCK_FILE="${CAVENTUS_LOCK_FILE:-/data/adb/caventus/recompile.lock}"
 WATCHDOG_PID_FILE="${CAVENTUS_WATCHDOG_PID_FILE:-/data/adb/caventus/watchdog.pid}"
 
 set_defaults() {
-  ZRAM_SIZE_MB=4096
+  ZRAM_SIZE_MB=5120
   ZRAM_ALGO=lz77eh
   MMD_ZRAM_SYNC=1
   ZRAM_RUNTIME_RESIZE=0
@@ -68,6 +68,19 @@ is_uint() {
 in_range() {
   is_uint "$1" || return 1
   [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]
+}
+
+# Use 64-bit awk math because Android /system/bin/sh (mksh) uses 32-bit signed integers
+mb_to_bytes() {
+  awk -v m="$1" 'BEGIN { printf "%.0f\n", m * 1048576 }'
+}
+
+bytes_to_mb() {
+  awk -v b="$1" 'BEGIN { printf "%.0f\n", int(b / 1048576) }'
+}
+
+is_pos_num() {
+  awk -v v="$1" 'BEGIN { exit !(v + 0 > 0) }' 2>/dev/null
 }
 
 # Whitelist + bounds validator for config keys
@@ -187,8 +200,8 @@ EOF
 }
 
 sync_system_prop() {
-  _madvise_bytes=$((ART_MADVISE_MB * 1048576))
-  _zram_bytes=$((ZRAM_SIZE_MB * 1048576))
+  _madvise_bytes=$(mb_to_bytes "$ART_MADVISE_MB")
+  _zram_bytes=$(mb_to_bytes "$ZRAM_SIZE_MB")
   _sp_path="$MODDIR/system.prop"
   _sp_tmp="${_sp_path}.tmp.$$"
   mkdir -p "$MODDIR" 2>/dev/null || true
@@ -330,20 +343,18 @@ pick_zram_algo() {
 }
 
 can_safely_swapoff() {
-  _swap_used_kb="$1"
-  _mem_avail_kb="$2"
+  _swap_used_kb="${1:-0}"
+  _mem_avail_kb="${2:-0}"
   _headroom_pct="${3:-80}"
-  [ -z "$_swap_used_kb" ] && _swap_used_kb=0
-  [ -z "$_mem_avail_kb" ] && _mem_avail_kb=0
+  is_uint "$_swap_used_kb" || _swap_used_kb=0
+  is_uint "$_mem_avail_kb" || _mem_avail_kb=0
   if [ "$_swap_used_kb" -le 0 ]; then
     return 0
   fi
   if [ "$_mem_avail_kb" -le 0 ]; then
     return 1
   fi
-  _lhs=$((_swap_used_kb * 100))
-  _rhs=$((_mem_avail_kb * _headroom_pct))
-  [ "$_lhs" -lt "$_rhs" ]
+  awk -v u="$_swap_used_kb" -v a="$_mem_avail_kb" -v p="$_headroom_pct" 'BEGIN { exit !((u * 100) < (a * p)) }'
 }
 
 extract_bracketed_token() {
@@ -387,8 +398,8 @@ json_escape() {
 apply_live_props() {
   _rp=$(resolve_resetprop 2>/dev/null || true)
   [ -z "$_rp" ] && return 0
-  _madvise_bytes=$((ART_MADVISE_MB * 1048576))
-  _zram_bytes=$((ZRAM_SIZE_MB * 1048576))
+  _madvise_bytes=$(mb_to_bytes "$ART_MADVISE_MB")
+  _zram_bytes=$(mb_to_bytes "$ZRAM_SIZE_MB")
   if [ "$ART_BOOT_PROPS" = "1" ]; then
     "$_rp" -n dalvik.vm.dex2oat-filter "$ART_DEX2OAT_FILTER" 2>/dev/null || true
     "$_rp" -n dalvik.vm.image-dex2oat-filter "$ART_DEX2OAT_FILTER" 2>/dev/null || true
@@ -446,7 +457,7 @@ apply_zram() {
     return 1
   fi
 
-  target_bytes=$((ZRAM_SIZE_MB * 1048576))
+  target_bytes=$(mb_to_bytes "$ZRAM_SIZE_MB")
   cur_algo=$(extract_active_algo "$avail_algos" || true)
   cur_disksize=$(cat "$zram_sys/disksize" 2>/dev/null || echo 0)
   swap_active=0
@@ -527,7 +538,7 @@ apply_zram() {
     log_msg "zram0 reconfiguration failed; restoring previous settings (${cur_algo:-lz4}, ${cur_disksize}B)."
     write_node "$zram_sys/reset" "1" || true
     [ -n "$cur_algo" ] && write_node "$zram_sys/comp_algorithm" "$cur_algo" || true
-    [ "$cur_disksize" -gt 0 ] 2>/dev/null && write_node "$zram_sys/disksize" "$cur_disksize" || true
+    is_pos_num "$cur_disksize" && write_node "$zram_sys/disksize" "$cur_disksize" || true
     $mkswap_cmd "$zram_dev" >/dev/null 2>&1 || true
     $swapon_cmd "$zram_dev" >/dev/null 2>&1 || true
     return 1
@@ -901,7 +912,7 @@ cmd_status() {
   echo "=== Caventus Status (oriole) ==="
   echo "RAM        : MemTotal=$(( ${mem_total:-0} / 1024 )) MB | MemAvailable=$(( ${mem_avail:-0} / 1024 )) MB"
   echo "Swap       : Used=$(( swap_used / 1024 )) MB / Total=$(( ${swap_total:-0} / 1024 )) MB"
-  echo "zRAM       : $(( zram_size / 1048576 )) MB | algo: $zram_algo | backing_dev: $zram_bdev | mmd_sync=$MMD_ZRAM_SYNC"
+  echo "zRAM       : $(bytes_to_mb "$zram_size") MB | algo: $zram_algo | backing_dev: $zram_bdev | mmd_sync=$MMD_ZRAM_SYNC"
   echo "zRAM stat  : $zram_stat"
   echo "VM         : swappiness=$(cat /proc/sys/vm/swappiness 2>/dev/null) | wm_scale=$(cat /proc/sys/vm/watermark_scale_factor 2>/dev/null) | vfs_cache=$(cat /proc/sys/vm/vfs_cache_pressure 2>/dev/null) | page_cluster=$(cat /proc/sys/vm/page-cluster 2>/dev/null)"
   echo "MGLRU/THP  : mglru=$mglru_en (ttl=${mglru_ttl}ms) | thp=$thp_en"
@@ -993,7 +1004,8 @@ cmd_status_json() {
   [ -z "$_a_flt" ] && _a_flt="${ART_DEX2OAT_FILTER}"
   _a_img=$(getprop dalvik.vm.image-dex2oat-filter 2>/dev/null || echo "")
   [ -z "$_a_img" ] && _a_img="stock"
-  _a_mad=$(getprop dalvik.vm.madvise.odexfile.size 2>/dev/null || echo $((ART_MADVISE_MB * 1048576)))
+  _a_mad=$(getprop dalvik.vm.madvise.odexfile.size 2>/dev/null || echo "")
+  [ -z "$_a_mad" ] && _a_mad=$(mb_to_bytes "$ART_MADVISE_MB")
 
   _recomp_run=false
   if [ -f "$LOCK_FILE" ]; then

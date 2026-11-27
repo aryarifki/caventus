@@ -95,7 +95,7 @@ const I18N = {
     lang_label: 'Bahasa / Language',
     module_mgmt: 'Manajemen Modul',
     reset_title: 'Reset ke Default Pixel 6 (oriole)',
-    reset_sub: 'Kembalikan profil Oriole Safe & Cool (4 GB lz77eh, sched stock, anti-odrefresh)',
+    reset_sub: 'Kembalikan profil Oriole Safe & Cool (5 GB lz77eh, sched stock, anti-odrefresh)',
     unsaved_changes: 'Perubahan belum disimpan',
     btn_discard: 'Batal',
     btn_save_apply: 'Simpan & Terapkan',
@@ -198,7 +198,7 @@ const I18N = {
     lang_label: 'Bahasa / Language',
     module_mgmt: 'Module Management',
     reset_title: 'Reset to Pixel 6 (oriole) Defaults',
-    reset_sub: 'Restore Oriole Safe & Cool defaults (4 GB lz77eh, stock sched, anti-odrefresh)',
+    reset_sub: 'Restore Oriole Safe & Cool defaults (5 GB lz77eh, stock sched, anti-odrefresh)',
     unsaved_changes: 'Unsaved changes',
     btn_discard: 'Discard',
     btn_save_apply: 'Save & Apply',
@@ -231,6 +231,8 @@ function showSnackbar(msg) {
   nativeToast(msg);
 }
 
+let navTrackRaf = 0;
+
 function applyLanguage(lang) {
   currentLang = I18N[lang] ? lang : 'id';
   localStorage.setItem('caventus_lang', currentLang);
@@ -242,14 +244,40 @@ function applyLanguage(lang) {
   document.querySelectorAll('#lang-chips .m3-chip').forEach(btn => {
     btn.classList.toggle('selected', btn.dataset.lang === currentLang);
   });
+  trackNavIndicator(240);
 }
 
-function updateNavIndicator() {
+function updateNavIndicator(instant = false) {
+  const navBar = $('nav-bar');
   const activeTab = document.querySelector('.nav-tab--active');
   const indicator = $('nav-indicator');
-  if (!activeTab || !indicator) return;
-  indicator.style.left = `${activeTab.offsetLeft}px`;
-  indicator.style.width = `${activeTab.offsetWidth}px`;
+  if (!navBar || !activeTab || !indicator) return;
+  const navRect = navBar.getBoundingClientRect();
+  const tabRect = activeTab.getBoundingClientRect();
+  if (!navRect.width || !tabRect.width) return;
+  const left = tabRect.left - navRect.left;
+  const width = tabRect.width;
+  indicator.classList.toggle('nav-indicator--instant', Boolean(instant));
+  indicator.style.transform = `translate3d(${left.toFixed(2)}px, 0, 0)`;
+  indicator.style.width = `${width.toFixed(2)}px`;
+}
+
+function trackNavIndicator(durationMs = 260) {
+  if (navTrackRaf) {
+    cancelAnimationFrame(navTrackRaf);
+    navTrackRaf = 0;
+  }
+  const start = performance.now();
+  const step = now => {
+    updateNavIndicator(true);
+    if (now - start < durationMs) {
+      navTrackRaf = requestAnimationFrame(step);
+    } else {
+      navTrackRaf = 0;
+      requestAnimationFrame(() => updateNavIndicator(false));
+    }
+  };
+  navTrackRaf = requestAnimationFrame(step);
 }
 
 function switchPage(pageId) {
@@ -259,7 +287,7 @@ function switchPage(pageId) {
   document.querySelectorAll('.nav-tab').forEach(t => {
     t.classList.toggle('nav-tab--active', t.dataset.page === pageId);
   });
-  requestAnimationFrame(updateNavIndicator);
+  trackNavIndicator(260);
   if (pageId === 'tools') {
     refreshLogs();
     refreshDiagList();
@@ -639,7 +667,13 @@ function wireControls() {
   document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.addEventListener('click', () => switchPage(tab.dataset.page));
   });
-  window.addEventListener('resize', updateNavIndicator);
+  window.addEventListener('resize', () => updateNavIndicator(true));
+  $('nav-bar')?.addEventListener('transitionend', () => updateNavIndicator(true));
+  if (typeof ResizeObserver === 'function' && $('nav-bar')) {
+    const ro = new ResizeObserver(() => updateNavIndicator(true));
+    ro.observe($('nav-bar'));
+    document.querySelectorAll('.nav-tab').forEach(tab => ro.observe(tab));
+  }
 
   // Refresh
   $('btn-refresh').addEventListener('click', refreshTelemetry);
@@ -840,6 +874,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   applyLanguage(currentLang);
   wireControls();
-  requestAnimationFrame(updateNavIndicator);
+  requestAnimationFrame(() => updateNavIndicator(true));
+  if (document.fonts?.ready) {
+    document.fonts.ready.then(() => updateNavIndicator(true)).catch(() => {});
+  }
   await refreshTelemetry();
+  requestAnimationFrame(() => updateNavIndicator(true));
 });
