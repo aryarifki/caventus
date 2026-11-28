@@ -16,7 +16,7 @@ LOCK_FILE="${CAVENTUS_LOCK_FILE:-/data/adb/caventus/recompile.lock}"
 WATCHDOG_PID_FILE="${CAVENTUS_WATCHDOG_PID_FILE:-/data/adb/caventus/watchdog.pid}"
 
 set_defaults() {
-  CONFIG_SCHEMA_VERSION=2
+  CONFIG_SCHEMA_VERSION=3
   ZRAM_SIZE_MB=6144
   ZRAM_ALGO=lz77eh
   MMD_ZRAM_SYNC=1
@@ -55,6 +55,9 @@ set_defaults() {
   LMKD_KILL_TIMEOUT_MS=150
   LMKD_DOWNGRADE_PRESSURE=80
   AUTO_BOOT_DIAG=1
+  DIAG_DAEMON_ENABLED=1
+  DIAG_DAEMON_INTERVAL_SEC=10
+  DIAG_DAEMON_MAX_MB=15
   ACTION_MODE=both
   RECOMPILE_SCOPE=all
 }
@@ -128,6 +131,9 @@ validate_config_kv() {
     LMKD_KILL_TIMEOUT_MS)      in_range "$_v" 20 1000 ;;
     LMKD_DOWNGRADE_PRESSURE)   in_range "$_v" 10 100 ;;
     AUTO_BOOT_DIAG)            case "$_v" in 0|1) return 0 ;; *) return 1 ;; esac ;;
+    DIAG_DAEMON_ENABLED)       case "$_v" in 0|1) return 0 ;; *) return 1 ;; esac ;;
+    DIAG_DAEMON_INTERVAL_SEC)  in_range "$_v" 5 60 ;;
+    DIAG_DAEMON_MAX_MB)        in_range "$_v" 2 100 ;;
     ACTION_MODE)               case "$_v" in both|recompile|compact|diag) return 0 ;; *) return 1 ;; esac ;;
     RECOMPILE_SCOPE)           case "$_v" in all|third_party) return 0 ;; *) return 1 ;; esac ;;
     *) return 1 ;;
@@ -197,6 +203,9 @@ LMKD_KILL_HEAVIEST=$LMKD_KILL_HEAVIEST
 LMKD_KILL_TIMEOUT_MS=$LMKD_KILL_TIMEOUT_MS
 LMKD_DOWNGRADE_PRESSURE=$LMKD_DOWNGRADE_PRESSURE
 AUTO_BOOT_DIAG=$AUTO_BOOT_DIAG
+DIAG_DAEMON_ENABLED=$DIAG_DAEMON_ENABLED
+DIAG_DAEMON_INTERVAL_SEC=$DIAG_DAEMON_INTERVAL_SEC
+DIAG_DAEMON_MAX_MB=$DIAG_DAEMON_MAX_MB
 ACTION_MODE=$ACTION_MODE
 RECOMPILE_SCOPE=$RECOMPILE_SCOPE
 EOF
@@ -860,7 +869,7 @@ cmd_save_config() {
         ;;
     esac
   done
-  CONFIG_SCHEMA_VERSION=2
+  CONFIG_SCHEMA_VERSION=3
   write_config_file
   sync_system_prop
   apply_live_props
@@ -870,23 +879,25 @@ cmd_save_config() {
 migrate_config_if_needed() {
   [ -f "$CONFIG_ENV" ] || return 0
   is_uint "$CONFIG_SCHEMA_VERSION" || CONFIG_SCHEMA_VERSION=1
-  [ "$CONFIG_SCHEMA_VERSION" -lt 2 ] || return 0
+  [ "$CONFIG_SCHEMA_VERSION" -lt 3 ] || return 0
 
   _old_ver="$CONFIG_SCHEMA_VERSION"
-  if [ "$ZRAM_ALGO" = "lz77eh" ]; then
-    case "$ZRAM_SIZE_MB" in
-      4096|5120) ZRAM_SIZE_MB=6144 ;;
-    esac
+  if [ "$_old_ver" -lt 2 ]; then
+    if [ "$ZRAM_ALGO" = "lz77eh" ]; then
+      case "$ZRAM_SIZE_MB" in
+        4096|5120) ZRAM_SIZE_MB=6144 ;;
+      esac
+    fi
+    [ "$LMKD_PSI_COMPLETE_MS" = "700" ] && LMKD_PSI_COMPLETE_MS=500
+    [ "$LMKD_THRASHING_LIMIT" = "80" ] && LMKD_THRASHING_LIMIT=50
+    [ "$LMKD_SWAP_FREE_LOW_PCT" = "10" ] && LMKD_SWAP_FREE_LOW_PCT=15
+    [ "$LMKD_SWAP_UTIL_MAX" = "95" ] && LMKD_SWAP_UTIL_MAX=90
   fi
-  [ "$LMKD_PSI_COMPLETE_MS" = "700" ] && LMKD_PSI_COMPLETE_MS=500
-  [ "$LMKD_THRASHING_LIMIT" = "80" ] && LMKD_THRASHING_LIMIT=50
-  [ "$LMKD_SWAP_FREE_LOW_PCT" = "10" ] && LMKD_SWAP_FREE_LOW_PCT=15
-  [ "$LMKD_SWAP_UTIL_MAX" = "95" ] && LMKD_SWAP_UTIL_MAX=90
 
-  CONFIG_SCHEMA_VERSION=2
+  CONFIG_SCHEMA_VERSION=3
   write_config_file
   sync_system_prop
-  log_msg "Migrated config.env schema v${_old_ver} -> v2 (zram=${ZRAM_SIZE_MB}MB/${ZRAM_ALGO}, lmkd=${LMKD_PSI_PARTIAL_MS}/${LMKD_PSI_COMPLETE_MS}/${LMKD_THRASHING_LIMIT}/${LMKD_SWAP_FREE_LOW_PCT}%/${LMKD_SWAP_UTIL_MAX}%)."
+  log_msg "Migrated config.env schema v${_old_ver} -> v3 (zram=${ZRAM_SIZE_MB}MB/${ZRAM_ALGO}, lmkd=${LMKD_PSI_PARTIAL_MS}/${LMKD_PSI_COMPLETE_MS}/${LMKD_THRASHING_LIMIT}/${LMKD_SWAP_FREE_LOW_PCT}%/${LMKD_SWAP_UTIL_MAX}%, rt_diag=${DIAG_DAEMON_ENABLED}/${DIAG_DAEMON_INTERVAL_SEC}s)."
 }
 
 cmd_migrate_config() {
@@ -914,6 +925,9 @@ cmd_reset_defaults() {
   apply_gpu
   apply_lmkd
   cmd_watchdog_stop
+  if [ "${CAVENTUS_NO_DAEMON:-0}" != "1" ]; then
+    sh "$DIAG_BIN" daemon-start >/dev/null 2>&1 || true
+  fi
   log_msg "Configuration reset to Pixel 6 (oriole) defaults."
 }
 
@@ -1050,6 +1064,22 @@ cmd_status_json() {
   _wd_run=false
   watchdog_is_running && _wd_run=true
 
+  _dd_raw=$(sh "$DIAG_BIN" daemon-status 2>/dev/null || echo "stopped|0|0|0|0|10|never|OK")
+  _old_ifs="$IFS"
+  IFS='|'
+  set -- $_dd_raw
+  IFS="$_old_ifs"
+  _dd_state=${1:-stopped}
+  _dd_pid=${2:-0}; is_uint "$_dd_pid" || _dd_pid=0
+  _dd_samples=${3:-0}; is_uint "$_dd_samples" || _dd_samples=0
+  _dd_anom=${4:-0}; is_uint "$_dd_anom" || _dd_anom=0
+  _dd_sz=${5:-0}; is_uint "$_dd_sz" || _dd_sz=0
+  _dd_iv=${6:-10}; is_uint "$_dd_iv" || _dd_iv=10
+  _dd_ts=${7:-never}
+  _dd_flags=${8:-OK}
+  _dd_run=false
+  [ "$_dd_state" = "running" ] && _dd_run=true
+
   printf '{"device":"%s","android":"%s","build":"%s","kernel":"%s","uptime":"%s",' \
     "$(json_escape "$_dev")" "$(json_escape "$_and")" "$(json_escape "$_bld")" "$(json_escape "$_kern")" "$(json_escape "$_up")"
   printf '"ram":{"total_kb":%s,"free_kb":%s,"available_kb":%s,"cached_kb":%s,"swap_total_kb":%s,"swap_free_kb":%s,"swap_used_kb":%s},' \
@@ -1075,13 +1105,16 @@ cmd_status_json() {
   printf '"art":{"dex2oat_filter":"%s","image_filter":"%s","madvise_odex_bytes":"%s"},' \
     "$(json_escape "$_a_flt")" "$(json_escape "$_a_img")" "$(json_escape "$_a_mad")"
   printf '"recompile_running":%s,"watchdog_running":%s,' "$_recomp_run" "$_wd_run"
-  printf '"config":{"CONFIG_SCHEMA_VERSION":%s,"ZRAM_SIZE_MB":%s,"ZRAM_ALGO":"%s","MMD_ZRAM_SYNC":%s,"ZRAM_RUNTIME_RESIZE":%s,"SWAPOFF_HEADROOM_PCT":%s,"VM_SWAPPINESS":%s,"VM_VFS_CACHE_PRESSURE":%s,"VM_WATERMARK_SCALE_FACTOR":%s,"VM_DIRTY_BACKGROUND_RATIO":%s,"VM_DIRTY_RATIO":%s,"VM_PAGE_CLUSTER":%s,"VM_STAT_INTERVAL":%s,"MGLRU_ENABLED":%s,"MGLRU_MIN_TTL_MS":%s,"THP_MODE":"%s","SCHED_PROFILE":"%s","CPU_RATE_PROFILE":"%s","IO_SCHEDULER":"%s","IO_READ_AHEAD_KB":%s,"IO_NR_REQUESTS":%s,"GPU_POWER_POLICY":"%s","GPU_DVFS_PERIOD_MS":%s,"SF_TUNING_MODE":"%s","WATCHDOG_ENABLED":%s,"ART_DEX2OAT_FILTER":"%s","ART_MADVISE_MB":%s,"ART_BOOT_PROPS":%s,"LMKD_USE_PSI":"%s","LMKD_PSI_PARTIAL_MS":%s,"LMKD_PSI_COMPLETE_MS":%s,"LMKD_THRASHING_LIMIT":%s,"LMKD_THRASHING_DECAY":%s,"LMKD_SWAP_FREE_LOW_PCT":%s,"LMKD_SWAP_UTIL_MAX":%s,"LMKD_KILL_HEAVIEST":"%s","LMKD_KILL_TIMEOUT_MS":%s,"LMKD_DOWNGRADE_PRESSURE":%s,"AUTO_BOOT_DIAG":%s,"ACTION_MODE":"%s","RECOMPILE_SCOPE":"%s"}}\n' \
+  printf '"diag_daemon":{"running":%s,"pid":%s,"samples":%s,"anomalies":%s,"size_kb":%s,"interval_s":%s,"last_ts":"%s","last_flags":"%s"},' \
+    "$_dd_run" "$_dd_pid" "$_dd_samples" "$_dd_anom" "$_dd_sz" "$_dd_iv" \
+    "$(json_escape "$_dd_ts")" "$(json_escape "$_dd_flags")"
+  printf '"config":{"CONFIG_SCHEMA_VERSION":%s,"ZRAM_SIZE_MB":%s,"ZRAM_ALGO":"%s","MMD_ZRAM_SYNC":%s,"ZRAM_RUNTIME_RESIZE":%s,"SWAPOFF_HEADROOM_PCT":%s,"VM_SWAPPINESS":%s,"VM_VFS_CACHE_PRESSURE":%s,"VM_WATERMARK_SCALE_FACTOR":%s,"VM_DIRTY_BACKGROUND_RATIO":%s,"VM_DIRTY_RATIO":%s,"VM_PAGE_CLUSTER":%s,"VM_STAT_INTERVAL":%s,"MGLRU_ENABLED":%s,"MGLRU_MIN_TTL_MS":%s,"THP_MODE":"%s","SCHED_PROFILE":"%s","CPU_RATE_PROFILE":"%s","IO_SCHEDULER":"%s","IO_READ_AHEAD_KB":%s,"IO_NR_REQUESTS":%s,"GPU_POWER_POLICY":"%s","GPU_DVFS_PERIOD_MS":%s,"SF_TUNING_MODE":"%s","WATCHDOG_ENABLED":%s,"ART_DEX2OAT_FILTER":"%s","ART_MADVISE_MB":%s,"ART_BOOT_PROPS":%s,"LMKD_USE_PSI":"%s","LMKD_PSI_PARTIAL_MS":%s,"LMKD_PSI_COMPLETE_MS":%s,"LMKD_THRASHING_LIMIT":%s,"LMKD_THRASHING_DECAY":%s,"LMKD_SWAP_FREE_LOW_PCT":%s,"LMKD_SWAP_UTIL_MAX":%s,"LMKD_KILL_HEAVIEST":"%s","LMKD_KILL_TIMEOUT_MS":%s,"LMKD_DOWNGRADE_PRESSURE":%s,"AUTO_BOOT_DIAG":%s,"DIAG_DAEMON_ENABLED":%s,"DIAG_DAEMON_INTERVAL_SEC":%s,"DIAG_DAEMON_MAX_MB":%s,"ACTION_MODE":"%s","RECOMPILE_SCOPE":"%s"}}\n' \
     "$CONFIG_SCHEMA_VERSION" "$ZRAM_SIZE_MB" "$ZRAM_ALGO" "$MMD_ZRAM_SYNC" "$ZRAM_RUNTIME_RESIZE" "$SWAPOFF_HEADROOM_PCT" \
     "$VM_SWAPPINESS" "$VM_VFS_CACHE_PRESSURE" "$VM_WATERMARK_SCALE_FACTOR" "$VM_DIRTY_BACKGROUND_RATIO" "$VM_DIRTY_RATIO" "$VM_PAGE_CLUSTER" "$VM_STAT_INTERVAL" "$MGLRU_ENABLED" "$MGLRU_MIN_TTL_MS" \
     "$THP_MODE" "$SCHED_PROFILE" "$CPU_RATE_PROFILE" "$IO_SCHEDULER" "$IO_READ_AHEAD_KB" "$IO_NR_REQUESTS" "$GPU_POWER_POLICY" "$GPU_DVFS_PERIOD_MS" "$SF_TUNING_MODE" "$WATCHDOG_ENABLED" \
     "$ART_DEX2OAT_FILTER" "$ART_MADVISE_MB" "$ART_BOOT_PROPS" \
     "$LMKD_USE_PSI" "$LMKD_PSI_PARTIAL_MS" "$LMKD_PSI_COMPLETE_MS" "$LMKD_THRASHING_LIMIT" "$LMKD_THRASHING_DECAY" "$LMKD_SWAP_FREE_LOW_PCT" "$LMKD_SWAP_UTIL_MAX" "$LMKD_KILL_HEAVIEST" "$LMKD_KILL_TIMEOUT_MS" "$LMKD_DOWNGRADE_PRESSURE" \
-    "$AUTO_BOOT_DIAG" "$ACTION_MODE" "$RECOMPILE_SCOPE"
+    "$AUTO_BOOT_DIAG" "$DIAG_DAEMON_ENABLED" "$DIAG_DAEMON_INTERVAL_SEC" "$DIAG_DAEMON_MAX_MB" "$ACTION_MODE" "$RECOMPILE_SCOPE"
 }
 
 cmd_compact() {
@@ -1280,6 +1313,13 @@ case "$cmd" in
         cmd_watchdog_stop
       fi
     fi
+    if [ "${CAVENTUS_NO_DAEMON:-0}" != "1" ]; then
+      if [ "$DIAG_DAEMON_ENABLED" = "1" ]; then
+        sh "$DIAG_BIN" daemon-start >/dev/null 2>&1 || true
+      else
+        sh "$DIAG_BIN" daemon-stop >/dev/null 2>&1 || true
+      fi
+    fi
     _apply_t1=$(date +%s 2>/dev/null || echo 0)
     log_msg "Caventus apply finished in $((_apply_t1 - _apply_t0))s (zram=$((_z_t1 - _z_t0))s, sched=$SCHED_PROFILE, cpu=$CPU_RATE_PROFILE)."
     ;;
@@ -1328,6 +1368,21 @@ case "$cmd" in
   diag-clear)
     exec sh "$DIAG_BIN" clear "$@"
     ;;
+  diag-daemon-start)
+    exec sh "$DIAG_BIN" daemon-start "$@"
+    ;;
+  diag-daemon-stop)
+    exec sh "$DIAG_BIN" daemon-stop "$@"
+    ;;
+  diag-daemon-status)
+    exec sh "$DIAG_BIN" daemon-status "$@"
+    ;;
+  diag-daemon-export)
+    exec sh "$DIAG_BIN" daemon-export "$@"
+    ;;
+  diag-daemon-clear)
+    exec sh "$DIAG_BIN" daemon-clear "$@"
+    ;;
   watchdog-start)
     cmd_watchdog_start
     ;;
@@ -1338,7 +1393,7 @@ case "$cmd" in
     cmd_watchdog_loop
     ;;
   help|-h|--help)
-    echo "Usage: $0 {apply|save-config KEY=VAL...|migrate-config|init-defaults|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset] [--force]|logs [N]|clear-logs|diag-capture|diag-boot-snapshot|diag-list|diag-read|diag-clear|watchdog-start|watchdog-stop|help}"
+    echo "Usage: $0 {apply|save-config KEY=VAL...|migrate-config|init-defaults|reset-defaults|status|status-json|compact|recompile [--filter=speed-profile] [--scope=all|third_party] [--reset] [--force]|logs [N]|clear-logs|diag-capture|diag-boot-snapshot|diag-list|diag-read|diag-clear|diag-daemon-start|diag-daemon-stop|diag-daemon-status|diag-daemon-export|diag-daemon-clear|watchdog-start|watchdog-stop|help}"
     ;;
   *)
     echo "Unknown command: $cmd" >&2

@@ -32,7 +32,7 @@ def is_executable_entry(rel_path: str) -> bool:
 def build_zip() -> tuple[Path, Path]:
     props = read_module_prop(MODULE_DIR / "module.prop")
     version = props.get("version", "")
-    if not re.fullmatch(r"v\d+\.\d+\.\d+", version):
+    if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?", version):
         raise ValueError(f"Invalid version in module.prop: {version!r}")
 
     DIST_DIR.mkdir(parents=True, exist_ok=True)

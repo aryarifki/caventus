@@ -21,11 +21,12 @@ const I18N = {
     qa_recomp_sub: "Paksa turun dari 'everything' ke 'speed-profile' (-f)",
     qa_apply_title: 'Terapkan Tuning Aktif',
     qa_apply_sub: 'Sinkronkan VM, MGLRU, LMKD & zRAM (aman OOM)',
-    qa_diag_title: 'Tangkap Log Diagnostik (15s)',
-    qa_diag_sub: 'Rekam logcat, dmesg, thermal, PSI & ekspor ke Download',
+    qa_diag_title: 'Ekspor Log Realtime (Multi-Jam)',
+    qa_diag_sub: 'Gabungkan rekaman daemon /data/adb/caventus/realtime/ ke laporan lengkap',
     btn_run: 'Run',
     btn_execute: 'Execute',
     btn_capture: 'Capture',
+    btn_export: 'Export',
     preset_title: 'Profil Optimasi Pixel 6',
     preset_desc: 'Pilih baseline cepat lalu sesuaikan parameter di bawah.',
     zram_desc: 'Ukuran dan kompresor /dev/block/zram0 (writeback-safe).',
@@ -78,13 +79,15 @@ const I18N = {
     logs_title: 'Log Runtime Caventus',
     btn_refresh_logs: 'Muat Ulang Log',
     btn_clear_logs: 'Hapus Log',
-    diag_title: 'Forensic Diagnostic Capture',
-    diag_desc: 'Rekam snapshot lengkap 13 seksi (boot, logcat, dmesg, thermal, PSI, CPUFreq, zRAM) untuk dianalisis & disempurnakan.',
-    diag_dur_label: 'Durasi Sampling Live',
-    diag_dur_sub: 'Gunakan 30s sambil membuka aplikasi yang terasa lambat',
+    diag_title: 'Realtime Forensic Logger (24/7)',
+    diag_desc: 'Daemon latar anti-LMKD merekam telemetri terus-menerus ke /data/adb/caventus/realtime/ tanpa perlu menahan WebUI.',
+    diag_daemon_title: 'Daemon Logger Permanen (/data/adb/caventus/realtime/)',
+    diag_iv_label: 'Interval Sampling Daemon',
+    diag_iv_sub: 'Rekaman kontinyu berputar otomatis (maks 15 MB) + snapshot tiap anomali/10m',
     diag_boot_title: 'Auto-Capture Setiap Boot',
     diag_boot_sub: 'Simpan laporan otomatis pasca-boot (--tag=boot) ke /sdcard/Download/Caventus-Logs/',
-    btn_run_diag: 'Rekam & Ekspor Log Lengkap',
+    btn_export_rt: 'Ekspor Laporan Lengkap (Multi-Jam)',
+    btn_snap_0s: 'Snapshot Instan (0s)',
     btn_view_diag: 'Lihat Terakhir',
     btn_clear_diag: 'Bersihkan',
     theme_title: 'Tema Material 3 Expressive',
@@ -124,11 +127,12 @@ const I18N = {
     qa_recomp_sub: "Force downgrade from 'everything' to 'speed-profile' (-f)",
     qa_apply_title: 'Apply Active Tuning',
     qa_apply_sub: 'Sync VM, MGLRU, LMKD & zRAM (OOM-guarded)',
-    qa_diag_title: 'Capture Diagnostic Logs (15s)',
-    qa_diag_sub: 'Record logcat, dmesg, thermal, PSI & export to Download',
+    qa_diag_title: 'Export Realtime Logs (Multi-Hour)',
+    qa_diag_sub: 'Bundle daemon logs from /data/adb/caventus/realtime/ into full report',
     btn_run: 'Run',
     btn_execute: 'Execute',
     btn_capture: 'Capture',
+    btn_export: 'Export',
     preset_title: 'Pixel 6 Optimization Profiles',
     preset_desc: 'Pick a quick baseline then fine-tune parameters below.',
     zram_desc: 'Size and compressor for /dev/block/zram0 (writeback-safe).',
@@ -181,13 +185,15 @@ const I18N = {
     logs_title: 'Caventus Runtime Logs',
     btn_refresh_logs: 'Refresh Logs',
     btn_clear_logs: 'Clear Logs',
-    diag_title: 'Forensic Diagnostic Capture',
-    diag_desc: 'Record 13-section snapshot (boot trace, logcat, dmesg, thermal, PSI, CPUFreq, zRAM) for deep root-cause analysis.',
-    diag_dur_label: 'Live Sampling Duration',
-    diag_dur_sub: 'Use 30s while launching apps that feel slow',
+    diag_title: 'Realtime Forensic Logger (24/7)',
+    diag_desc: 'LMKD-shielded background daemon records continuous telemetry to /data/adb/caventus/realtime/ without keeping WebUI open.',
+    diag_daemon_title: 'Persistent Logger Daemon (/data/adb/caventus/realtime/)',
+    diag_iv_label: 'Daemon Sampling Interval',
+    diag_iv_sub: 'Auto-rotating continuous logs (15 MB cap) + full snapshot on anomaly/10m',
     diag_boot_title: 'Auto-Capture On Every Boot',
     diag_boot_sub: 'Save automatic post-boot report (--tag=boot) to /sdcard/Download/Caventus-Logs/',
-    btn_run_diag: 'Capture & Export Full Logs',
+    btn_export_rt: 'Export Full Multi-Hour Report',
+    btn_snap_0s: 'Instant Snapshot (0s)',
     btn_view_diag: 'View Latest',
     btn_clear_diag: 'Clear Archives',
     theme_title: 'Material 3 Expressive Theme',
@@ -357,6 +363,19 @@ function renderTelemetry(data) {
       : `Status: ${wdRun ? 'running (300s interval)' : 'stopped'}`;
   }
 
+  if ($('rt-daemon-badge')) {
+    const dd = data.diag_daemon || {};
+    if (dd.running) {
+      $('rt-daemon-badge').textContent = currentLang === 'id'
+        ? `AKTIF (PID ${dd.pid} · ${dd.samples || 0} sampel · ${dd.anomalies || 0} anomali · ${dd.size_kb || 0} KB · last: ${dd.last_flags || 'OK'})`
+        : `RUNNING (PID ${dd.pid} · ${dd.samples || 0} samples · ${dd.anomalies || 0} anomalies · ${dd.size_kb || 0} KB · last: ${dd.last_flags || 'OK'})`;
+    } else {
+      $('rt-daemon-badge').textContent = currentLang === 'id'
+        ? `BERHENTI (${dd.samples || 0} sampel tersimpan · ${dd.size_kb || 0} KB)`
+        : `STOPPED (${dd.samples || 0} stored samples · ${dd.size_kb || 0} KB)`;
+    }
+  }
+
   savedConfig = { ...data.config };
   draftConfig = { ...data.config };
   syncControlsFromDraft();
@@ -404,6 +423,9 @@ function syncControlsFromDraft() {
   if ($('cfg-AUTO_BOOT_DIAG')) {
     $('cfg-AUTO_BOOT_DIAG').checked = Number(draftConfig.AUTO_BOOT_DIAG) === 1;
   }
+  if ($('cfg-DIAG_DAEMON_ENABLED')) {
+    $('cfg-DIAG_DAEMON_ENABLED').checked = Number(draftConfig.DIAG_DAEMON_ENABLED ?? 1) === 1;
+  }
   if ($('cfg-LMKD_USE_PSI')) {
     $('cfg-LMKD_USE_PSI').checked = String(draftConfig.LMKD_USE_PSI) === 'true';
   }
@@ -424,7 +446,7 @@ function syncControlsFromDraft() {
   setChipSelection('chips-ART_DEX2OAT_FILTER', draftConfig.ART_DEX2OAT_FILTER);
   setChipSelection('chips-RECOMPILE_SCOPE', draftConfig.RECOMPILE_SCOPE);
   setChipSelection('chips-ACTION_MODE', draftConfig.ACTION_MODE);
-  setChipSelection('chips-DIAG_DURATION', selectedDiagDuration);
+  setChipSelection('chips-DIAG_DAEMON_INTERVAL_SEC', draftConfig.DIAG_DAEMON_INTERVAL_SEC ?? 10);
 }
 
 function getChangedPairs() {
@@ -625,6 +647,43 @@ function runDiagCapture(durationSec = selectedDiagDuration) {
   });
 }
 
+async function runRealtimeExport() {
+  const modal = $('recompile-modal');
+  const titleEl = $('recomp-modal-title');
+  const term = $('recomp-terminal');
+  const pill = $('recomp-progress-pill');
+  const bar = $('recomp-progress-bar');
+  const closeBtn = $('btn-close-recomp');
+
+  titleEl.textContent = currentLang === 'id' ? 'Ekspor Log Realtime (Multi-Jam)' : 'Export Realtime Logs (Multi-Hour)';
+  term.textContent = '> caventus-ctl.sh diag-daemon-export\n';
+  pill.textContent = '...';
+  bar.style.width = '40%';
+  closeBtn.disabled = true;
+  modal.classList.add('open');
+
+  const res = await callCtl(['diag-daemon-export']);
+  closeBtn.disabled = false;
+  const out = (res.stdout || '').trim();
+  const err = (res.stderr || '').trim();
+  if (out) term.textContent += `${out}\n`;
+  if (err) term.textContent += `[ERR] ${err}\n`;
+  term.scrollTop = term.scrollHeight;
+
+  if (res.code === 0) {
+    bar.style.width = '100%';
+    pill.textContent = 'OK';
+    const m = out.match(/^SAVED_EXPORT=(.+)$/m) || out.match(/^SAVED_INTERNAL=(.+)$/m);
+    const saved = m ? m[1].trim() : '/data/adb/caventus/realtime/';
+    showSnackbar(currentLang === 'id' ? `Diekspor: ${saved}` : `Exported: ${saved}`);
+    refreshDiagList();
+    refreshTelemetry();
+  } else {
+    pill.textContent = 'ERR';
+    showSnackbar(`Export exited with code ${res.code}`);
+  }
+}
+
 async function viewLastDiag() {
   const modal = $('recompile-modal');
   const titleEl = $('recomp-modal-title');
@@ -697,7 +756,7 @@ function wireControls() {
     showSnackbar(currentLang === 'id' ? 'Tuning diterapkan' : 'Tuning applied');
     refreshTelemetry();
   });
-  $('qa-diag')?.addEventListener('click', () => runDiagCapture('15'));
+  $('qa-diag')?.addEventListener('click', runRealtimeExport);
 
   // Tuning Presets
   document.querySelectorAll('#preset-chips .m3-chip').forEach(btn => {
@@ -753,6 +812,10 @@ function wireControls() {
     draftConfig.AUTO_BOOT_DIAG = e.target.checked ? 1 : 0;
     updateSaveDock();
   });
+  $('cfg-DIAG_DAEMON_ENABLED')?.addEventListener('change', e => {
+    draftConfig.DIAG_DAEMON_ENABLED = e.target.checked ? 1 : 0;
+    updateSaveDock();
+  });
   $('cfg-LMKD_USE_PSI')?.addEventListener('change', e => {
     draftConfig.LMKD_USE_PSI = e.target.checked ? 'true' : 'false';
     updateSaveDock();
@@ -778,20 +841,14 @@ function wireControls() {
     'ART_DEX2OAT_FILTER',
     'RECOMPILE_SCOPE',
     'ACTION_MODE',
+    'DIAG_DAEMON_INTERVAL_SEC',
   ].forEach(key => {
     document.querySelectorAll(`#chips-${key} .m3-chip`).forEach(btn => {
       btn.addEventListener('click', () => {
-        draftConfig[key] = btn.dataset.val;
+        draftConfig[key] = /^\d+$/.test(btn.dataset.val) ? Number(btn.dataset.val) : btn.dataset.val;
         setChipSelection(`chips-${key}`, btn.dataset.val);
         updateSaveDock();
       });
-    });
-  });
-
-  document.querySelectorAll('#chips-DIAG_DURATION .m3-chip').forEach(btn => {
-    btn.addEventListener('click', () => {
-      selectedDiagDuration = btn.dataset.val;
-      setChipSelection('chips-DIAG_DURATION', selectedDiagDuration);
     });
   });
 
@@ -805,11 +862,14 @@ function wireControls() {
 
   // Tools
   $('btn-run-recompile').addEventListener('click', runRecompileStream);
-  $('btn-run-diag')?.addEventListener('click', () => runDiagCapture(selectedDiagDuration));
+  $('btn-export-rt')?.addEventListener('click', runRealtimeExport);
+  $('btn-run-diag')?.addEventListener('click', () => runDiagCapture('0'));
   $('btn-view-diag')?.addEventListener('click', viewLastDiag);
   $('btn-clear-diag')?.addEventListener('click', async () => {
     await callCtl(['diag-clear']);
+    await callCtl(['diag-daemon-clear']);
     refreshDiagList();
+    refreshTelemetry();
     showSnackbar(currentLang === 'id' ? 'Arsip diagnostik dibersihkan' : 'Diagnostic archives cleared');
   });
   $('btn-refresh-logs').addEventListener('click', refreshLogs);

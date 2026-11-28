@@ -4,6 +4,20 @@ Modul **KernelSU** (*overlay-free*, tanpa modifikasi `/system` atau `/vendor`) y
 
 ---
 
+## Pembaruan CI `v1.4.3-ci` (Always-On Realtime Forensic Logger — Build CI)
+
+> **Catatan:** `v1.4.3-ci` adalah build **khusus CI** (`ci/v1.4.3-realtime-logger`, belum dirilis ke GitHub Releases publik) untuk pengumpulan log multi-jam.
+
+1. **Daemon Logger 24/7 Anti-LMKD (`/data/adb/caventus/realtime/`):** Berjalan otomatis pasca-boot via `setsid`, `oom_score_adj=-900`, `renice +5` sehingga tidak ikut ter-kill saat membuka banyak aplikasi berat dan tetap merekam meski WebUI ditutup.
+2. **Telemetry Berputar Otomatis (`max 15 MB`):**
+   - `metrics.tsv`: time-series tiap `10s` (`mem_avail`, `swap_used`, `zram_mem`, `bd_stat`, delta `pswpin`/`pswpout`/`pgmajfault`/`allocstall`/`oom`, PSI, thermal `BIG`/`MID`/`battery`, cooling throttle, clock MHz, flags).
+   - `anomalies.log`: snapshot lengkap (`top`, `ps`, `dumpsys meminfo --short`, PSI, `sda_ra`/`mglru_ttl` drift) tiap kali terdeteksi `THERMAL`, `LOWMEM`, `SWAPFULL`, `THRASH`, `PSI_MEM`, `PSI_IO`, `ALLOCSTALL`, atau `OOM`, plus checkpoint tiap `10 menit`.
+   - `events.log`: delta event `dmesg` & `logcat` tiap `60s`.
+   - `session.meta` & `daemon.status`: metadata boot + status daemon live.
+3. **Ekspor 1-Tap Multi-Jam:** Buka WebUI → **Ekspor Log Realtime (Multi-Jam)** (atau `caventus-ctl.sh diag-daemon-export`) untuk menggabungkan seluruh sesi ke `/sdcard/Download/Caventus-Logs/latest-caventus-realtime.log` (dan arsip `.tar.gz`).
+
+---
+
 ## Pembaruan Utama `v1.4.2` (6 GB `lz77eh`, Auto-Migration, Balanced LMKD & Thermal Guard)
 
 1. **Auto-Migrasi `config.env` Schema (`v1` → `v2`):** Config lama dari `v1.4.0`/`v1.4.1` (`4096`/`5120 MB` & LMKD lama) otomatis dimigrasi saat `apply` pertama kali sehingga tidak lagi menimpa `mmd.zram.size` dengan ukuran usang (tetap menghormati angka custom pengguna).

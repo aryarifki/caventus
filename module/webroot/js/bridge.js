@@ -87,8 +87,18 @@ let mockState = {
   },
   recompile_running: false,
   watchdog_running: false,
+  diag_daemon: {
+    running: true,
+    pid: 24180,
+    samples: 1428,
+    anomalies: 4,
+    size_kb: 412,
+    interval_s: 10,
+    last_ts: '14:50:12',
+    last_flags: 'OK',
+  },
   config: {
-    CONFIG_SCHEMA_VERSION: 2,
+    CONFIG_SCHEMA_VERSION: 3,
     ZRAM_SIZE_MB: 6144,
     ZRAM_ALGO: 'lz77eh',
     MMD_ZRAM_SYNC: 1,
@@ -127,6 +137,9 @@ let mockState = {
     LMKD_KILL_TIMEOUT_MS: 150,
     LMKD_DOWNGRADE_PRESSURE: 80,
     AUTO_BOOT_DIAG: 1,
+    DIAG_DAEMON_ENABLED: 1,
+    DIAG_DAEMON_INTERVAL_SEC: 10,
+    DIAG_DAEMON_MAX_MB: 15,
     ACTION_MODE: 'both',
     RECOMPILE_SCOPE: 'all',
   },
@@ -342,9 +355,44 @@ function handleMockCtl(args) {
   if (cmd === 'diag-list') {
     return Promise.resolve({
       code: 0,
-      stdout: 'caventus-diag-20261128-045500-manual.log|42KB\nlast-boot.log|3KB',
+      stdout: 'caventus-realtime-20261128-145000.log|412KB\ncaventus-diag-20261128-045500-manual.log|42KB\nlast-boot.log|3KB',
       stderr: '',
     });
+  }
+  if (cmd === 'diag-daemon-status') {
+    const d = mockState.diag_daemon;
+    return Promise.resolve({
+      code: 0,
+      stdout: `${d.running ? 'running' : 'stopped'}|${d.pid}|${d.samples}|${d.anomalies}|${d.size_kb}|${d.interval_s}|${d.last_ts}|${d.last_flags}`,
+      stderr: '',
+    });
+  }
+  if (cmd === 'diag-daemon-start') {
+    mockState.diag_daemon.running = true;
+    return Promise.resolve({ code: 0, stdout: `STARTED pid=${mockState.diag_daemon.pid}`, stderr: '' });
+  }
+  if (cmd === 'diag-daemon-stop') {
+    mockState.diag_daemon.running = false;
+    return Promise.resolve({ code: 0, stdout: 'STOPPED', stderr: '' });
+  }
+  if (cmd === 'diag-daemon-export') {
+    return Promise.resolve({
+      code: 0,
+      stdout: [
+        'SAVED_INTERNAL=/data/adb/caventus/diag/caventus-realtime-20261128-145000.log',
+        'SAVED_EXPORT=/sdcard/Download/Caventus-Logs/caventus-realtime-20261128-145000.log',
+        'SAVED_TAR=/data/adb/caventus/diag/caventus-realtime-raw-latest.tar.gz',
+        'SUMMARY=SAMPLES=1428 SPAN_S=14280 FIRST_TS=10:52:10 LAST_TS=14:50:12',
+      ].join('\n'),
+      stderr: '',
+    });
+  }
+  if (cmd === 'diag-daemon-clear') {
+    mockState.diag_daemon.samples = 0;
+    mockState.diag_daemon.anomalies = 0;
+    mockState.diag_daemon.size_kb = 1;
+    mockLogs.push('[preview] Realtime logs cleared.');
+    return Promise.resolve({ code: 0, stdout: 'Realtime logs cleared.', stderr: '' });
   }
   if (cmd === 'diag-read') {
     return Promise.resolve({

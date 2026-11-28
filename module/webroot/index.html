@@ -139,10 +139,10 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5s-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>
               </div>
               <div class="m3-row__content">
-                <span class="m3-row__title" data-i18n="qa_diag_title">Tangkap Log Diagnostik (15s)</span>
-                <span class="m3-row__sub" data-i18n="qa_diag_sub">Rekam logcat, dmesg, thermal, PSI &amp; ekspor ke Download</span>
+                <span class="m3-row__title" data-i18n="qa_diag_title">Ekspor Log Realtime (Multi-Jam)</span>
+                <span class="m3-row__sub" data-i18n="qa_diag_sub">Gabungkan rekaman daemon /data/adb/caventus/realtime/ ke laporan lengkap</span>
               </div>
-              <span class="m3-value-pill" data-i18n="btn_capture">Capture</span>
+              <span class="m3-value-pill" data-i18n="btn_export">Export</span>
             </div>
           </div>
         </div>
@@ -638,24 +638,36 @@
 
         <div class="section-block">
           <div class="section-header">
-            <h3 class="section-title" data-i18n="diag_title">Forensic Diagnostic Capture</h3>
-            <p class="section-desc" data-i18n="diag_desc">Rekam snapshot lengkap 13 seksi (boot, logcat, dmesg, thermal, PSI, CPUFreq, zRAM) untuk dianalisis &amp; disempurnakan.</p>
+            <h3 class="section-title" data-i18n="diag_title">Realtime Forensic Logger (24/7)</h3>
+            <p class="section-desc" data-i18n="diag_desc">Daemon latar anti-LMKD merekam telemetri terus-menerus ke /data/adb/caventus/realtime/ tanpa perlu menahan WebUI.</p>
           </div>
           <div class="m3-group">
+            <div class="m3-row">
+              <div class="m3-icon-badge m3-icon-badge--error">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5s-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8z"/></svg>
+              </div>
+              <div class="m3-row__content">
+                <span class="m3-row__title" data-i18n="diag_daemon_title">Daemon Logger Permanen (/data/adb/caventus/realtime/)</span>
+                <span class="m3-row__sub" id="rt-daemon-badge">Status: —</span>
+              </div>
+              <label class="m3-switch">
+                <input type="checkbox" id="cfg-DIAG_DAEMON_ENABLED" checked />
+                <span class="m3-switch__track"><span class="m3-switch__thumb"></span></span>
+              </label>
+            </div>
+
             <div class="m3-row m3-row--stacked">
               <div class="m3-row__top">
-                <div class="m3-icon-badge m3-icon-badge--error">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5s-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8z"/></svg>
-                </div>
                 <div class="m3-row__content">
-                  <span class="m3-row__title" data-i18n="diag_dur_label">Durasi Sampling Live</span>
-                  <span class="m3-row__sub" data-i18n="diag_dur_sub">Gunakan 30s sambil membuka aplikasi yang terasa lambat</span>
+                  <span class="m3-row__title" data-i18n="diag_iv_label">Interval Sampling Daemon</span>
+                  <span class="m3-row__sub" data-i18n="diag_iv_sub">Rekaman kontinyu berputar otomatis (maks 15 MB) + snapshot tiap anomali/10m</span>
                 </div>
               </div>
-              <div class="chip-row" id="chips-DIAG_DURATION">
-                <button class="m3-chip" data-val="0" type="button">Instan (0s)</button>
-                <button class="m3-chip selected" data-val="15" type="button">Normal (15s)</button>
-                <button class="m3-chip" data-val="30" type="button">Uji Buka App (30s)</button>
+              <div class="chip-row" id="chips-DIAG_DAEMON_INTERVAL_SEC">
+                <button class="m3-chip" data-val="5" type="button">5s</button>
+                <button class="m3-chip selected" data-val="10" type="button">10s</button>
+                <button class="m3-chip" data-val="15" type="button">15s</button>
+                <button class="m3-chip" data-val="30" type="button">30s</button>
               </div>
             </div>
 
@@ -671,11 +683,12 @@
             </div>
 
             <div class="m3-row m3-row--stacked">
-              <button class="btn-pill btn-pill--full" id="btn-run-diag" type="button">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
-                <span data-i18n="btn_run_diag">Rekam &amp; Ekspor Log Lengkap</span>
+              <button class="btn-pill btn-pill--full" id="btn-export-rt" type="button">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                <span data-i18n="btn_export_rt">Ekspor Laporan Lengkap (Multi-Jam)</span>
               </button>
               <div class="btn-row">
+                <button class="btn-pill btn-pill--tonal" id="btn-run-diag" type="button" data-i18n="btn_snap_0s">Snapshot Instan (0s)</button>
                 <button class="btn-pill btn-pill--tonal" id="btn-view-diag" type="button" data-i18n="btn_view_diag">Lihat Terakhir</button>
                 <button class="btn-pill btn-pill--error" id="btn-clear-diag" type="button" data-i18n="btn_clear_diag">Bersihkan</button>
               </div>
@@ -768,7 +781,7 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
               </div>
               <div class="m3-row__content">
-                <span class="m3-row__title">Caventus v1.4.2</span>
+                <span class="m3-row__title">Caventus v1.4.3-ci</span>
                 <span class="m3-row__sub">id: caventus_oriole_ram · by aryarifki · overlay-free · GS101</span>
               </div>
             </div>

@@ -80,8 +80,8 @@ def check_module_prop() -> str:
     missing = REQUIRED_PROP_KEYS - set(props)
     assert not missing, f"Missing module.prop keys: {missing}"
     assert props["id"] == "caventus_oriole_ram"
-    assert props["version"] == "v1.4.2"
-    assert props["versionCode"] == "142"
+    assert props["version"] == "v1.4.3-ci"
+    assert props["versionCode"] == "143"
     print(f"PASS: module.prop ({props['id']} {props['version']})")
     return props["version"]
 
@@ -113,6 +113,10 @@ def check_shell_unit_tests() -> None:
         (sb / "mod").mkdir()
         test_script = f"""
 set -eu
+cleanup_rt() {{
+  sh "{ctl}" diag-daemon-stop >/dev/null 2>&1 || true
+}}
+trap cleanup_rt EXIT INT TERM
 export CAVENTUS_SOURCE_ONLY=1
 . "{ctl}"
 
@@ -181,13 +185,20 @@ export CAVENTUS_LOG_FILE="{sb}/caventus.log"
 export CAVENTUS_LOCK_FILE="{sb}/recompile.lock"
 export CAVENTUS_WATCHDOG_PID_FILE="{sb}/watchdog.pid"
 export CAVENTUS_DIAG_DIR="{sb}/diag"
+export CAVENTUS_RT_DIR="{sb}/realtime"
+export CAVENTUS_RT_PID_FILE="{sb}/diag-daemon.pid"
+export CAVENTUS_RT_TEST_FAST=1
 export CAVENTUS_EXPORT_DIR="{sb}/export"
 export CAVENTUS_PROJECT_EXPORT_DIR="{sb}/proj_export"
 export CAVENTUS_NO_WATCHDOG=1
+export CAVENTUS_NO_DAEMON=1
 mkdir -p "{sb}/proj_export"
 
 sh "{ctl}" init-defaults >/dev/null
-grep -q '^CONFIG_SCHEMA_VERSION=2$' "{sb}/config.env"
+grep -q '^CONFIG_SCHEMA_VERSION=3$' "{sb}/config.env"
+grep -q '^DIAG_DAEMON_ENABLED=1$' "{sb}/config.env"
+grep -q '^DIAG_DAEMON_INTERVAL_SEC=10$' "{sb}/config.env"
+grep -q '^DIAG_DAEMON_MAX_MB=15$' "{sb}/config.env"
 grep -q '^ZRAM_ALGO=lz77eh$' "{sb}/config.env"
 grep -q '^ZRAM_RUNTIME_RESIZE=0$' "{sb}/config.env"
 grep -q '^ART_BOOT_PROPS=0$' "{sb}/config.env"
@@ -208,7 +219,7 @@ if grep -q '^ro\\.surface_flinger\\.' "{sb}/mod/system.prop"; then exit 1; fi
 if grep -q '^dalvik\\.vm\\.dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
 if grep -q '^dalvik\\.vm\\.image-dex2oat-filter=' "{sb}/mod/system.prop"; then exit 1; fi
 
-# 4b. Schema migration tests (legacy defaults upgrade vs custom preservation)
+# 4b. Schema migration tests (v1->v3 & v2->v3, legacy defaults upgrade vs custom preservation)
 cat <<'EOF' > "{sb}/config.env"
 ZRAM_SIZE_MB=4096
 ZRAM_ALGO=lz77eh
@@ -218,7 +229,10 @@ LMKD_SWAP_FREE_LOW_PCT=10
 LMKD_SWAP_UTIL_MAX=95
 EOF
 sh "{ctl}" migrate-config >/dev/null
-grep -q '^CONFIG_SCHEMA_VERSION=2$' "{sb}/config.env"
+grep -q '^CONFIG_SCHEMA_VERSION=3$' "{sb}/config.env"
+grep -q '^DIAG_DAEMON_ENABLED=1$' "{sb}/config.env"
+grep -q '^DIAG_DAEMON_INTERVAL_SEC=10$' "{sb}/config.env"
+grep -q '^DIAG_DAEMON_MAX_MB=15$' "{sb}/config.env"
 grep -q '^ZRAM_SIZE_MB=6144$' "{sb}/config.env"
 grep -q '^LMKD_PSI_COMPLETE_MS=500$' "{sb}/config.env"
 grep -q '^LMKD_THRASHING_LIMIT=50$' "{sb}/config.env"
@@ -227,12 +241,14 @@ grep -q '^LMKD_SWAP_UTIL_MAX=90$' "{sb}/config.env"
 grep -q '^mmd.zram.size=6442450944$' "{sb}/mod/system.prop"
 
 cat <<'EOF' > "{sb}/config.env"
+CONFIG_SCHEMA_VERSION=2
 ZRAM_SIZE_MB=3072
 ZRAM_ALGO=lz77eh
 LMKD_THRASHING_LIMIT=45
 EOF
 sh "{ctl}" migrate-config >/dev/null
-grep -q '^CONFIG_SCHEMA_VERSION=2$' "{sb}/config.env"
+grep -q '^CONFIG_SCHEMA_VERSION=3$' "{sb}/config.env"
+grep -q '^DIAG_DAEMON_ENABLED=1$' "{sb}/config.env"
 grep -q '^ZRAM_SIZE_MB=3072$' "{sb}/config.env"
 grep -q '^LMKD_THRASHING_LIMIT=45$' "{sb}/config.env"
 grep -q '^mmd.zram.size=3221225472$' "{sb}/mod/system.prop"
@@ -286,14 +302,38 @@ sh "{ctl}" diag-list | grep -q 'caventus-diag-.*-ci\\.log'
 sh "{ctl}" diag-read --tail=20 | grep -q 'AUTOMATED DIAGNOSTIC SUMMARY'
 if sh "{ctl}" diag-read ../config.env >/dev/null 2>&1; then exit 1; fi
 if sh "{ctl}" diag-read /etc/passwd >/dev/null 2>&1; then exit 1; fi
+
+# 7. Sandbox Realtime Logger Daemon lifecycle & multi-hour export tests
+sh "{ctl}" diag-daemon-start | grep -qE '^(STARTED|ALREADY_RUNNING) pid=[0-9]+$'
+sleep 2
+sh "{ctl}" diag-daemon-status | grep -q '^running|'
+test -s "{sb}/realtime/session.meta"
+test -s "{sb}/realtime/metrics.tsv"
+[ "$(wc -l < "{sb}/realtime/metrics.tsv" | tr -d ' ')" -ge 2 ]
+sh "{ctl}" diag-daemon-export > "{sb}/rt_export_out.txt"
+grep -q '^SAVED_INTERNAL=' "{sb}/rt_export_out.txt"
+grep -q '^SAVED_EXPORT=' "{sb}/rt_export_out.txt"
+grep -q '^SUMMARY=SAMPLES=' "{sb}/rt_export_out.txt"
+test -s "{sb}/export/latest-caventus-realtime.log"
+for sec in 01 02 03 04 05 06; do
+  grep -q "SECTION ${{sec}}:" "{sb}/export/latest-caventus-realtime.log"
+done
+sh "{ctl}" diag-list | grep -q 'caventus-realtime-.*\\.log'
+sh "{ctl}" diag-read --tail=20 | grep -q 'REALTIME TIME-SERIES TELEMETRY'
+sh "{ctl}" diag-daemon-stop | grep -q '^STOPPED$'
+sh "{ctl}" diag-daemon-status | grep -q '^stopped|'
+[ ! -f "{sb}/diag-daemon.pid" ]
 """
         res = subprocess.run(["sh", "-c", test_script], capture_output=True, text=True)
         if res.returncode != 0:
             raise AssertionError(f"Shell unit tests failed:\nSTDOUT:{res.stdout}\nSTDERR:{res.stderr}")
 
         status_data = json.loads((sb / "status.json").read_text(encoding="utf-8"))
-        for key in ("device", "ram", "zram", "vm", "thp", "sched", "cpufreq", "io", "gpu", "sf", "lmkd", "art", "watchdog_running", "config"):
+        for key in ("device", "ram", "zram", "vm", "thp", "sched", "cpufreq", "io", "gpu", "sf", "lmkd", "art", "watchdog_running", "diag_daemon", "config"):
             assert key in status_data, f"Missing key {key} in status-json"
+        assert status_data["config"]["DIAG_DAEMON_ENABLED"] == 1
+        assert status_data["config"]["DIAG_DAEMON_INTERVAL_SEC"] == 10
+        assert status_data["config"]["DIAG_DAEMON_MAX_MB"] == 15
         assert status_data["config"]["ZRAM_SIZE_MB"] == 5120
         assert status_data["config"]["ART_DEX2OAT_FILTER"] == "speed"
         assert status_data["config"]["ZRAM_RUNTIME_RESIZE"] == 0

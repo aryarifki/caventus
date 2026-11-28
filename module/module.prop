@@ -1,6 +1,6 @@
 id=caventus_oriole_ram
 name=Caventus — Pixel 6 (oriole) RAM Optimizer
-version=v1.4.2
-versionCode=142
+version=v1.4.3-ci
+versionCode=143
 author=aryarifki
-description=Pixel 6 (oriole/gs101) boot-safe, thermal-safe RAM & system optimizer with Material 3 Expressive KSU WebUI & forensic diagnostic log capture: 6 GB lz77eh mmd zRAM (auto-migrating 64-bit mksh-safe config), anti-odrefresh ART with thermal guard, balanced-responsive PSI LMKD, GS101 stock-safe sched/CPUFreq, and 1-tap forensic log capture.
+description=[CI] Pixel 6 (oriole/gs101) optimizer with always-on 24/7 realtime forensic logger daemon (/data/adb/caventus/realtime/), 6 GB lz77eh mmd zRAM, balanced-responsive PSI LMKD, thermal-guarded ART, and 1-tap multi-hour report export.
